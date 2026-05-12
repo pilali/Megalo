@@ -15,4 +15,8 @@ define MEGALO_BUILD_CMDS
 		CXXFLAGS="$(TARGET_CXXFLAGS) -std=c++17 -O3 -ffast-math -fvisibility=hidden"
 endef
 
+define MEGALO_INSTALL_TARGET_CMDS
+	cp -r $(@D)/megalo.lv2 $(TARGET_DIR)/usr/lib/lv2/
+endef
+
 $(eval $(generic-package))
