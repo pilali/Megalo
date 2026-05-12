@@ -1,6 +1,7 @@
 CXX      ?= g++
 CXXFLAGS ?= -std=c++17 -O3 -ffast-math -fvisibility=hidden -Wall -Wextra -Wno-unused-parameter
-LV2FLAGS  = $(shell pkg-config --cflags lv2)
+# In cross-compilation CXXFLAGS already contains -I$(STAGING_DIR)/usr/include
+LV2FLAGS  ?= $(shell pkg-config --cflags lv2 2>/dev/null)
 
 BUNDLE  = megalo.lv2
 BINARY  = $(BUNDLE)/megalo.so

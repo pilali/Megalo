@@ -8,15 +8,18 @@ MEGALO_SITE_METHOD = git
 MEGALO_BUNDLES = megalo.lv2
 
 define MEGALO_BUILD_CMDS
-	$(TARGET_MAKE_ENV) cmake $(@D) \
-		-DCMAKE_TOOLCHAIN_FILE="$(HOST_DIR)/usr/share/buildroot/toolchainfile.cmake" \
-		-DCMAKE_BUILD_TYPE=Release \
-		-B$(@D)/build
-	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D)/build
+	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) \
+		CXX="$(TARGET_CXX)" \
+		STRIP="$(TARGET_STRIP)" \
+		CXXFLAGS="$(TARGET_CXXFLAGS) -std=c++17 -O3 -ffast-math -fvisibility=hidden"
 endef
 
 define MEGALO_INSTALL_BUNDLES
-	cp -r $(@D)/build/megalo.lv2/. $(TARGET_DIR)/usr/lib/lv2/megalo.lv2/
+	install -d $(TARGET_DIR)/usr/lib/lv2/megalo.lv2
+	cp $(@D)/megalo.lv2/megalo.so \
+	   $(@D)/megalo.lv2/manifest.ttl \
+	   $(@D)/megalo.lv2/megalo.ttl \
+	   $(TARGET_DIR)/usr/lib/lv2/megalo.lv2/
 endef
 
 $(eval $(generic-package))
