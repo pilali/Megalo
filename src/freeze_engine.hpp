@@ -6,7 +6,6 @@
 static constexpr int FREEZE_MAX_SR      = 96000;
 static constexpr int FREEZE_MAX_CAP_MS  = 500;
 static constexpr int FREEZE_MAX_SAMPLES = FREEZE_MAX_SR * FREEZE_MAX_CAP_MS / 1000; // 48 000
-static constexpr int FREEZE_XFADE      = 512;
 
 enum class FreezeEvent { None = 0, Onset = 1, LoopReady = 2 };
 
@@ -17,9 +16,6 @@ enum class FreezeEvent { None = 0, Onset = 1, LoopReady = 2 };
 //   PendingSkip — onset detected, counting down attack_skip_ms
 //   Recording   — writing live audio directly into the loop buffer
 //   Looping     — loop buffer ready, available for playback
-//
-// This avoids the original look-back approach that captured the attack
-// transient at the loop start, which caused a repeating-echo artefact.
 class FreezeEngine {
 public:
     void init(double sample_rate) noexcept {
@@ -36,6 +32,7 @@ public:
         _skip_remain = 0;
         _rec_pos     = 0;
         _rec_target  = 0;
+        _xfade_len   = 512;
         _onset_armed = true;
         _onset_hold  = 0;
         _rms_fast    = 0.0f;
@@ -44,8 +41,15 @@ public:
 
     // Feed one input sample.  Returns Onset when a new capture starts, and
     // LoopReady on the exact sample the loop becomes available for playback.
+    // xfade_ms   : crossfade length baked at the loop boundary [5–100 ms]
+    // retrigger_ms: refractory period after an onset [50–1000 ms]
     FreezeEvent process(float x, float threshold,
-                        int sample_len_ms, int attack_skip_ms) noexcept {
+                        int sample_len_ms, int attack_skip_ms,
+                        int xfade_ms, int retrigger_ms) noexcept {
+        // Store tunable timing values for use in _finalise() / onset detection.
+        _xfade_len = std::clamp((int)(_sr * xfade_ms * 0.001), 16, FREEZE_MAX_SAMPLES / 8);
+        const int refractory = std::clamp((int)(_sr * retrigger_ms * 0.001), 1, (int)_sr);
+
         // Onset detection (always running)
         const float x2 = x * x;
         _rms_fast += _fast_c * (x2 - _rms_fast);
@@ -62,11 +66,11 @@ public:
 
             if (_onset_armed && ratio > thresh_hi) {
                 _onset_armed = false;
-                _onset_hold  = (int)(_sr * 0.15);  // 150 ms refractory
+                _onset_hold  = refractory;
 
                 if (_state == State::Idle || _state == State::Looping) {
                     int samples = (int)(_sr * sample_len_ms * 0.001);
-                    _rec_target  = std::clamp(samples, FREEZE_XFADE * 4, FREEZE_MAX_SAMPLES);
+                    _rec_target  = std::clamp(samples, _xfade_len * 4, FREEZE_MAX_SAMPLES);
                     _skip_remain = std::max(0, (int)(_sr * attack_skip_ms * 0.001));
                     _state       = State::PendingSkip;
                     evt          = FreezeEvent::Onset;
@@ -128,18 +132,22 @@ private:
 
     void _finalise() noexcept {
         _loop_len = _rec_pos;
-        // Bake a crossfade at the loop boundary to prevent clicks on wrap.
-        for (int i = 0; i < FREEZE_XFADE && i < _loop_len; ++i) {
-            const float t    = (float)i / (FREEZE_XFADE - 1);
-            const int   tail = _loop_len - FREEZE_XFADE + i;
-            if (tail >= 0)
-                _loop[tail] = _loop[tail] * (1.0f - t) + _loop[i] * t;
+        // Bake a raised-cosine crossfade at the loop boundary (end → start)
+        // so the wrap point is click-free regardless of loop content.
+        const int xf = std::min(_xfade_len, _loop_len / 4);
+        for (int i = 0; i < xf; ++i) {
+            const float t    = (float)i / (float)(xf - 1);
+            // Raised cosine: 0 at tail end, 1 at tail start → smooth fade
+            const float w    = 0.5f * (1.0f - std::cos(3.14159265f * t));
+            const int   tail = _loop_len - xf + i;
+            _loop[tail] = _loop[tail] * (1.0f - w) + _loop[i] * w;
         }
         _state = State::Looping;
     }
 
     float  _loop[FREEZE_MAX_SAMPLES] = {};
     int    _loop_len    = 0;
+    int    _xfade_len   = 512;
     State  _state       = State::Idle;
     bool   _onset_armed = true;
     int    _onset_hold  = 0;

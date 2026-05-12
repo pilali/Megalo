@@ -19,8 +19,7 @@
 
 class GranularLooper {
 public:
-    static constexpr int   N_GRAINS = 6;
-    static constexpr float JITTER   = 0.20f;  // ±20 % of grain size
+    static constexpr int N_GRAINS = 6;
 
     void reset() noexcept {
         _initialized = false;
@@ -29,10 +28,13 @@ public:
     }
 
     // Returns one synthesised output sample.
-    // grain_samples is clamped to [64, loop_len] internally.
-    float process(const float* loop, int loop_len, int grain_samples) noexcept {
+    // grain_samples : clamped to [64, loop_len] internally
+    // scatter       : jitter radius as a fraction of grain size [0.0 – 1.0]
+    float process(const float* loop, int loop_len,
+                  int grain_samples, float scatter) noexcept {
         if (!loop || loop_len == 0) return 0.0f;
         grain_samples = std::clamp(grain_samples, 64, loop_len);
+        scatter       = std::clamp(scatter, 0.0f, 1.0f);
 
         if (!_initialized) {
             const int hop = grain_samples / N_GRAINS;
@@ -66,8 +68,8 @@ public:
 
             if (++g.cursor >= g.len) {
                 g.cursor = 0;
-                // Respawn close to the global playhead — small jitter only.
-                const float jitter = _rand_bipolar() * (float)grain_samples * JITTER;
+                // Respawn near the global playhead; scatter controls blur vs. coherence.
+                const float jitter = _rand_bipolar() * (float)grain_samples * scatter;
                 g.start = _playhead + jitter;
                 g.start -= (float)loop_len * std::floor(g.start / (float)loop_len);
             }

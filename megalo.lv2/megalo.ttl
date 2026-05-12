@@ -218,4 +218,35 @@
         lv2:maximum 200.0 ;
         lv2:default  80.0 ;
         units:unit  units:ms
+    ] ,
+
+    # ── Fine-tuning ───────────────────────────────────────────────────────
+    [
+        a lv2:ControlPort, lv2:InputPort ;
+        lv2:index   20 ;
+        lv2:symbol  "xfade_ms" ;
+        lv2:name    "Loop Crossfade" ;
+        lv2:minimum   5.0 ;
+        lv2:maximum 100.0 ;
+        lv2:default  20.0 ;
+        units:unit  units:ms
+    ] ,
+    [
+        a lv2:ControlPort, lv2:InputPort ;
+        lv2:index   21 ;
+        lv2:symbol  "grain_scatter" ;
+        lv2:name    "Grain Scatter" ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ;
+        lv2:default 0.2
+    ] ,
+    [
+        a lv2:ControlPort, lv2:InputPort ;
+        lv2:index   22 ;
+        lv2:symbol  "retrigger_ms" ;
+        lv2:name    "Retrigger" ;
+        lv2:minimum   50.0 ;
+        lv2:maximum 1000.0 ;
+        lv2:default  200.0 ;
+        units:unit  units:ms
     ] .
