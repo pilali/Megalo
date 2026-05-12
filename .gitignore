@@ -1,0 +1,8 @@
+# Build outputs
+megalo.lv2/megalo.so
+build/
+
+# Editor / OS
+.DS_Store
+*.swp
+*~
