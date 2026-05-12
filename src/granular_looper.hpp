@@ -30,11 +30,13 @@ public:
     // Returns one synthesised output sample.
     // grain_samples : clamped to [64, loop_len] internally
     // scatter       : jitter radius as a fraction of grain size [0.0 – 1.0]
+    // speed         : loop read speed (1.0 = normal, 2.0 = +1 oct, 0.5 = −1 oct)
     float process(const float* loop, int loop_len,
-                  int grain_samples, float scatter) noexcept {
+                  int grain_samples, float scatter, float speed) noexcept {
         if (!loop || loop_len == 0) return 0.0f;
         grain_samples = std::clamp(grain_samples, 64, loop_len);
         scatter       = std::clamp(scatter, 0.0f, 1.0f);
+        speed         = std::clamp(speed, 0.25f, 4.0f);
 
         if (!_initialized) {
             const int hop = grain_samples / N_GRAINS;
@@ -58,8 +60,9 @@ public:
             const float t      = (float)g.cursor / (float)(g.len - 1);
             const float window = 0.5f * (1.0f - std::cos(2.0f * 3.14159265f * t));
 
-            // Loop read position = grain start + elapsed samples, wrapped
-            float lp = g.start + (float)g.cursor;
+            // Loop read position advances at `speed` per cursor step — this
+            // is what shifts the pitch without touching the Hann window duration.
+            float lp = g.start + (float)g.cursor * speed;
             lp -= (float)loop_len * std::floor(lp / (float)loop_len);
             const int   i0   = (int)lp;
             const int   i1   = (i0 + 1) % loop_len;
@@ -75,7 +78,7 @@ public:
             }
         }
 
-        _playhead += 1.0f;
+        _playhead += speed;
         if (_playhead >= (float)loop_len) _playhead -= (float)loop_len;
 
         return out * (2.0f / (float)N_GRAINS);

@@ -27,25 +27,28 @@ public:
 
     void reset() noexcept {
         std::memset(_loop, 0, sizeof(_loop));
-        _loop_len    = 0;
-        _state       = State::Idle;
-        _skip_remain = 0;
-        _rec_pos     = 0;
-        _rec_target  = 0;
-        _xfade_len   = 512;
-        _onset_armed = true;
-        _onset_hold  = 0;
-        _rms_fast    = 0.0f;
-        _rms_slow    = 1e-10f;
+        _loop_len      = 0;
+        _state         = State::Idle;
+        _skip_remain   = 0;
+        _rec_pos       = 0;
+        _rec_target    = 0;
+        _xfade_len     = 512;
+        _fade_in_len   = 0;
+        _onset_armed   = true;
+        _onset_hold    = 0;
+        _rms_fast      = 0.0f;
+        _rms_slow      = 1e-10f;
     }
 
     // Feed one input sample.  Returns Onset when a new capture starts, and
     // LoopReady on the exact sample the loop becomes available for playback.
-    // xfade_ms   : crossfade length baked at the loop boundary [5–100 ms]
-    // retrigger_ms: refractory period after an onset [50–1000 ms]
+    // xfade_ms        : crossfade baked at the loop boundary    [5–100 ms]
+    // retrigger_ms    : refractory period after an onset        [50–1000 ms]
+    // capture_fade_ms : half-Hann fade-in at capture start      [0–50 ms]
     FreezeEvent process(float x, float threshold,
                         int sample_len_ms, int attack_skip_ms,
-                        int xfade_ms, int retrigger_ms) noexcept {
+                        int xfade_ms, int retrigger_ms,
+                        int capture_fade_ms) noexcept {
         // Store tunable timing values for use in _finalise() / onset detection.
         _xfade_len = std::clamp((int)(_sr * xfade_ms * 0.001), 16, FREEZE_MAX_SAMPLES / 8);
         const int refractory = std::clamp((int)(_sr * retrigger_ms * 0.001), 1, (int)_sr);
@@ -69,9 +72,12 @@ public:
                 _onset_hold  = refractory;
 
                 if (_state == State::Idle || _state == State::Looping) {
-                    int samples = (int)(_sr * sample_len_ms * 0.001);
+                    int samples  = (int)(_sr * sample_len_ms * 0.001);
                     _rec_target  = std::clamp(samples, _xfade_len * 4, FREEZE_MAX_SAMPLES);
                     _skip_remain = std::max(0, (int)(_sr * attack_skip_ms * 0.001));
+                    // Cap fade-in so it can never fill more than a quarter of the loop.
+                    _fade_in_len = std::clamp((int)(_sr * capture_fade_ms * 0.001),
+                                              0, _rec_target / 4);
                     _state       = State::PendingSkip;
                     evt          = FreezeEvent::Onset;
                 }
@@ -88,7 +94,7 @@ public:
             } else {
                 _state   = State::Recording;
                 _rec_pos = 0;
-                _loop[_rec_pos++] = x;
+                _loop[_rec_pos++] = x * _fade_gain(0);
                 if (_rec_pos >= _rec_target) {
                     _finalise();
                     evt = FreezeEvent::LoopReady;
@@ -97,7 +103,8 @@ public:
             break;
 
         case State::Recording:
-            _loop[_rec_pos++] = x;
+            _loop[_rec_pos] = x * _fade_gain(_rec_pos);
+            ++_rec_pos;
             if (_rec_pos >= _rec_target) {
                 _finalise();
                 evt = FreezeEvent::LoopReady;
@@ -130,6 +137,13 @@ public:
 private:
     enum class State { Idle, PendingSkip, Recording, Looping };
 
+    // Half-Hann fade-in: 0 at sample 0, 1 at sample _fade_in_len.
+    float _fade_gain(int pos) const noexcept {
+        if (_fade_in_len == 0 || pos >= _fade_in_len) return 1.0f;
+        const float t = (float)pos / (float)_fade_in_len;
+        return 0.5f * (1.0f - std::cos(3.14159265f * t));
+    }
+
     void _finalise() noexcept {
         _loop_len = _rec_pos;
         // Bake a raised-cosine crossfade at the loop boundary (end → start)
@@ -146,9 +160,10 @@ private:
     }
 
     float  _loop[FREEZE_MAX_SAMPLES] = {};
-    int    _loop_len    = 0;
-    int    _xfade_len   = 512;
-    State  _state       = State::Idle;
+    int    _loop_len      = 0;
+    int    _xfade_len     = 512;
+    int    _fade_in_len   = 0;
+    State  _state         = State::Idle;
     bool   _onset_armed = true;
     int    _onset_hold  = 0;
     int    _skip_remain = 0;
