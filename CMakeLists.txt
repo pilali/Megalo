@@ -7,6 +7,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LV2 REQUIRED lv2)
 
+# ── Options ───────────────────────────────────────────────────────────────
+option(MEGALO_PHASE_VOCODER
+    "Enable phase vocoder pitch shifter (higher quality, more CPU)" OFF)
+set(MEGALO_PV_N "2048" CACHE STRING
+    "Phase vocoder FFT size — must be a power of 2 (1024 for MOD Dwarf, 2048 for Pi 5)")
+
 set(BUNDLE_DIR "${CMAKE_BINARY_DIR}/megalo.lv2")
 
 add_library(megalo MODULE src/plugin.cpp)
@@ -20,6 +26,16 @@ target_compile_options(megalo PRIVATE
     $<$<CONFIG:Release>:-O3>
     $<$<CONFIG:Debug>:-O0 -g>
 )
+
+if(MEGALO_PHASE_VOCODER)
+    target_compile_definitions(megalo PRIVATE
+        MEGALO_PHASE_VOCODER
+        MEGALO_PV_N=${MEGALO_PV_N}
+    )
+    message(STATUS "Phase vocoder enabled — FFT size: ${MEGALO_PV_N}")
+else()
+    message(STATUS "Phase vocoder disabled — using variable-speed reader")
+endif()
 
 set_target_properties(megalo PROPERTIES
     PREFIX ""

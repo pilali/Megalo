@@ -9,28 +9,28 @@
 #include "biquad.hpp"
 #include "envelope.hpp"
 
+#ifdef MEGALO_PHASE_VOCODER
+#include "phase_vocoder.hpp"
+#endif
+
 static constexpr char MEGALO_URI[] = "https://github.com/pilali/megalo";
 
 // ── Port indices ───────────────────────────────────────────────────────────
 enum Port : uint32_t {
     P_AUDIO_IN    =  0,
     P_AUDIO_OUT   =  1,
-    // Freeze
     P_THRESHOLD   =  2,   // onset sensitivity  [0 – 1]
     P_SAMPLE_MS   =  3,   // capture length ms  [50 – 500]
     P_BLEND       =  4,   // dry/wet            [0 – 1]
-    // Pitch / Detune
     P_DETUNE_CT   =  5,   // LFO detune cents   [0 – 50]
     P_CHORUS_RATE =  6,   // LFO rate Hz        [0.1 – 8]
     P_PITCH1_SEMI =  7,   // voice-1 semitones  [-24 – 24]
     P_PITCH1_LVL  =  8,   // voice-1 level      [0 – 1]
     P_PITCH2_SEMI =  9,   // voice-2 semitones  [-24 – 24]
     P_PITCH2_LVL  = 10,   // voice-2 level      [0 – 1]
-    // Filter
     P_FILT_TYPE   = 11,   // 0=LP 1=HP 2=BP
     P_FILT_CUTOFF = 12,   // Hz                 [20 – 20000]
     P_FILT_Q      = 13,   // Q                  [0.1 – 10]
-    // Envelope
     P_ENV_ATK     = 14,   // attack  ms         [0 – 5000]
     P_ENV_DCY     = 15,   // decay   ms         [0 – 5000]
     P_ENV_SUS     = 16,   // sustain level      [0 – 1]
@@ -38,7 +38,7 @@ enum Port : uint32_t {
     P_COUNT       = 18
 };
 
-static constexpr uint32_t N_CTL = P_COUNT - 2;  // 16 control ports
+static constexpr uint32_t N_CTL = P_COUNT - 2;
 
 // ── Plugin instance ────────────────────────────────────────────────────────
 struct Megalo {
@@ -46,31 +46,41 @@ struct Megalo {
 
     const float* audio_in  = nullptr;
     float*       audio_out = nullptr;
-    std::array<const float*, N_CTL> ctl = {};   // ctl[i] ↔ port (i+2)
+    std::array<const float*, N_CTL> ctl = {};
 
     FreezeEngine freeze;
     Biquad       filter;
     Envelope     envelope;
 
-    // Independent playback positions for the three loop voices
+    // Voice loop positions (variable-speed reader, always present for v0)
     double pos[3] = {0.0, 0.0, 0.0};
 
-    // Chorus LFO state
+    // Chorus LFO
     double lfo_phase = 0.0;
 
-    // Filter parameter cache — avoid recomputing coefficients every block
-    float cached_ftype   = -1.0f;
-    float cached_cutoff  = -1.0f;
-    float cached_q       = -1.0f;
+    // Filter param cache
+    float cached_ftype  = -1.0f;
+    float cached_cutoff = -1.0f;
+    float cached_q      = -1.0f;
+
+#ifdef MEGALO_PHASE_VOCODER
+    PhaseVocoder pv1;  // pitch-shifted voice 1 (p1_semi + detune)
+    PhaseVocoder pv2;  // pitch-shifted voice 2 (p2_semi)
+
+    // Cached pitch values — update PV at block boundary only
+    float pv1_last_semi  = 1e9f;
+    float pv1_last_detune = 1e9f;
+    float pv2_last_semi  = 1e9f;
+#endif
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-static inline double semi_to_ratio(float semi) noexcept {
-    return std::pow(2.0, (double)semi / 12.0);
-}
-
 static inline float ctl(const Megalo* p, Port port) noexcept {
     return *p->ctl[port - 2];
+}
+
+static inline double semi_to_ratio(float semi) noexcept {
+    return std::pow(2.0, static_cast<double>(semi) / 12.0);
 }
 
 // ── LV2 callbacks ──────────────────────────────────────────────────────────
@@ -83,6 +93,10 @@ static LV2_Handle instantiate(const LV2_Descriptor*,
     if (!p) return nullptr;
     p->sample_rate = rate;
     p->freeze.init(rate);
+#ifdef MEGALO_PHASE_VOCODER
+    p->pv1.init(rate);
+    p->pv2.init(rate);
+#endif
     return p;
 }
 
@@ -106,6 +120,11 @@ static void activate(LV2_Handle handle)
     p->pos[0] = p->pos[1] = p->pos[2] = 0.0;
     p->lfo_phase = 0.0;
     p->cached_ftype = p->cached_cutoff = p->cached_q = -1.0f;
+#ifdef MEGALO_PHASE_VOCODER
+    p->pv1.reset();
+    p->pv2.reset();
+    p->pv1_last_semi = p->pv1_last_detune = p->pv2_last_semi = 1e9f;
+#endif
 }
 
 static void run(LV2_Handle handle, uint32_t n_samples)
@@ -114,31 +133,28 @@ static void run(LV2_Handle handle, uint32_t n_samples)
 
     const float* in = p->audio_in;
     float*      out = p->audio_out;
-    const float  sr = (float)p->sample_rate;
+    const float  sr = static_cast<float>(p->sample_rate);
 
-    // Snapshot controls at block boundary (LV2 control-rate convention)
+    // ── Snapshot controls (block boundary) ────────────────────────────────
     const float threshold   = std::clamp(ctl(p, P_THRESHOLD),   0.0f,   1.0f);
-    const int   sample_ms   = std::clamp((int)ctl(p, P_SAMPLE_MS), 50, 500);
-    const float blend       = std::clamp(ctl(p, P_BLEND),        0.0f,   1.0f);
-    const float detune_ct   = std::clamp(ctl(p, P_DETUNE_CT),    0.0f,  50.0f);
-    const float chorus_rate = std::clamp(ctl(p, P_CHORUS_RATE),  0.1f,   8.0f);
+    const int   sample_ms   = std::clamp(static_cast<int>(ctl(p, P_SAMPLE_MS)), 50, 500);
+    const float blend       = std::clamp(ctl(p, P_BLEND),       0.0f,   1.0f);
+    const float detune_ct   = std::clamp(ctl(p, P_DETUNE_CT),   0.0f,  50.0f);
+    const float chorus_rate = std::clamp(ctl(p, P_CHORUS_RATE), 0.1f,   8.0f);
     const float p1_semi     =            ctl(p, P_PITCH1_SEMI);
-    const float p1_lvl      = std::clamp(ctl(p, P_PITCH1_LVL),  0.0f,   1.0f);
+    const float p1_lvl      = std::clamp(ctl(p, P_PITCH1_LVL),  0.0f,  1.0f);
     const float p2_semi     =            ctl(p, P_PITCH2_SEMI);
-    const float p2_lvl      = std::clamp(ctl(p, P_PITCH2_LVL),  0.0f,   1.0f);
+    const float p2_lvl      = std::clamp(ctl(p, P_PITCH2_LVL),  0.0f,  1.0f);
     const float filt_type   = ctl(p, P_FILT_TYPE);
     const float filt_cutoff = std::clamp(ctl(p, P_FILT_CUTOFF), 20.0f, sr * 0.499f);
     const float filt_q      = std::clamp(ctl(p, P_FILT_Q),      0.1f,  10.0f);
-    const float env_atk     = std::clamp(ctl(p, P_ENV_ATK),     0.0f, 5000.0f);
-    const float env_dcy     = std::clamp(ctl(p, P_ENV_DCY),     0.0f, 5000.0f);
+    const float env_atk     = std::clamp(ctl(p, P_ENV_ATK),     0.0f,  5000.0f);
+    const float env_dcy     = std::clamp(ctl(p, P_ENV_DCY),     0.0f,  5000.0f);
     const float env_sus     = std::clamp(ctl(p, P_ENV_SUS),     0.0f,   1.0f);
     const float env_rel     = std::clamp(ctl(p, P_ENV_REL),     0.0f, 10000.0f);
 
-    // Recompute filter only when parameters change
-    if (filt_type   != p->cached_ftype  ||
-        filt_cutoff != p->cached_cutoff ||
-        filt_q      != p->cached_q)
-    {
+    // ── Filter ────────────────────────────────────────────────────────────
+    if (filt_type != p->cached_ftype || filt_cutoff != p->cached_cutoff || filt_q != p->cached_q) {
         Biquad::Type btype = (filt_type < 0.5f) ? Biquad::LP
                            : (filt_type < 1.5f) ? Biquad::HP
                            :                      Biquad::BP;
@@ -150,45 +166,69 @@ static void run(LV2_Handle handle, uint32_t n_samples)
 
     p->envelope.set(env_atk, env_dcy, env_sus, env_rel, sr);
 
-    const double lfo_inc  = (double)chorus_rate / p->sample_rate;
+#ifdef MEGALO_PHASE_VOCODER
+    // ── Phase vocoder: update pitch at block boundary ──────────────────────
+    // Voice 1 uses the LFO mean value (block-rate modulation is sufficient
+    // since the PV frame rate is already ~90 Hz).
+    const double lfo_now = std::sin(2.0 * M_PI * p->lfo_phase);
+    const float  pv1_semi  = p1_semi + static_cast<float>(detune_ct * lfo_now / 100.0);
+    if (pv1_semi != p->pv1_last_semi) {
+        p->pv1.set_pitch(pv1_semi);
+        p->pv1_last_semi = pv1_semi;
+    }
+    if (p2_semi != p->pv2_last_semi) {
+        p->pv2.set_pitch(p2_semi);
+        p->pv2_last_semi = p2_semi;
+    }
+    const float* ldata = p->freeze.loop_data();
+    const int    llen  = p->freeze.loop_len();
+#endif
+
+    const double lfo_inc  = static_cast<double>(chorus_rate) / p->sample_rate;
     const double speed_v2 = semi_to_ratio(p2_semi);
 
+    // ── Sample loop ────────────────────────────────────────────────────────
     for (uint32_t i = 0; i < n_samples; ++i) {
         const float x = in[i];
 
-        // Onset detection — returns true on the triggering sample
         bool onset = p->freeze.process(x, threshold, sample_ms);
         if (onset) {
-            // New note: release old freeze, reset readers, re-trigger envelope
             p->envelope.release();
             p->pos[0] = p->pos[1] = p->pos[2] = 0.0;
             p->envelope.trigger();
+#ifdef MEGALO_PHASE_VOCODER
+            p->pv1.reset();
+            p->pv2.reset();
+#endif
         }
 
-        // LFO (sine, one phase accumulator)
-        double lfo = std::sin(2.0 * M_PI * p->lfo_phase);
+        // LFO
+        const double lfo = std::sin(2.0 * M_PI * p->lfo_phase);
         p->lfo_phase += lfo_inc;
         if (p->lfo_phase >= 1.0) p->lfo_phase -= 1.0;
 
-        // Voice speeds
-        // v0: base freeze at unity pitch (always present)
-        // v1: pitch_1_semi + LFO-modulated detune (chorus / vibrato layer)
-        // v2: pitch_2_semi (static second harmony)
-        double detune_ratio = std::pow(2.0, (double)detune_ct * lfo / 1200.0);
-        double speed_v1 = semi_to_ratio(p1_semi) * detune_ratio;
+        float v0, v1, v2;
 
-        float v0 = p->freeze.read(1.0,      p->pos[0]);
-        float v1 = p->freeze.read(speed_v1, p->pos[1]);
-        float v2 = p->freeze.read(speed_v2, p->pos[2]);
+#ifdef MEGALO_PHASE_VOCODER
+        // v0: base voice — simple variable-speed read (no pitch shift)
+        v0 = p->freeze.read(1.0, p->pos[0]);
+        // v1, v2: phase vocoder pitch shift (better quality)
+        v1 = p->pv1.process(ldata, llen);
+        v2 = p->pv2.process(ldata, llen);
+#else
+        // Variable-speed reader (all platforms, lighter CPU)
+        const double detune_ratio = std::pow(2.0, static_cast<double>(detune_ct) * lfo / 1200.0);
+        const double speed_v1     = semi_to_ratio(p1_semi) * detune_ratio;
+        v0 = p->freeze.read(1.0,      p->pos[0]);
+        v1 = p->freeze.read(speed_v1, p->pos[1]);
+        v2 = p->freeze.read(speed_v2, p->pos[2]);
+#endif
 
-        // Sum: base voice + additive harmonic layers
         float freeze_sig = v0 + v1 * p1_lvl + v2 * p2_lvl;
 
-        // Filter → envelope
         freeze_sig  = p->filter.process(freeze_sig);
         freeze_sig *= p->envelope.process();
 
-        // Dry/wet
         out[i] = x * (1.0f - blend) + freeze_sig * blend;
     }
 }
@@ -199,14 +239,7 @@ static void cleanup(LV2_Handle handle)
 }
 
 static const LV2_Descriptor descriptor = {
-    MEGALO_URI,
-    instantiate,
-    connect_port,
-    activate,
-    run,
-    nullptr,   // deactivate
-    cleanup,
-    nullptr    // extension_data
+    MEGALO_URI, instantiate, connect_port, activate, run, nullptr, cleanup, nullptr
 };
 
 LV2_SYMBOL_EXPORT const LV2_Descriptor* lv2_descriptor(uint32_t index)

@@ -85,6 +85,10 @@ public:
 
     bool is_frozen() const noexcept { return _frozen && _loop_len > 0; }
 
+    // Direct loop buffer access for the phase vocoder
+    const float* loop_data() const noexcept { return _loop; }
+    int          loop_len()  const noexcept { return _loop_len; }
+
 private:
     void _capture(int sample_len_ms) noexcept {
         int samples = (int)(_sr * sample_len_ms * 0.001);

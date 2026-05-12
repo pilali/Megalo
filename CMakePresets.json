@@ -1,0 +1,65 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 19, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+
+    {
+      "name": "native",
+      "inherits": "base",
+      "displayName": "Native (host compiler)",
+      "description": "Development / testing on the build machine — no cross-compilation"
+    },
+
+    {
+      "name": "moddwarf-new",
+      "inherits": "base",
+      "displayName": "MOD Dwarf — moddwarf-new toolchain",
+      "description": "Cortex-A35 aarch64, GCC 9.4, built via mod-plugin-builder",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{HOST_DIR}/usr/share/buildroot/toolchainfile.cmake",
+        "CMAKE_CXX_FLAGS": "-mcpu=cortex-a35 -O3 -ffast-math",
+        "MEGALO_PHASE_VOCODER": "OFF",
+        "MEGALO_PV_N": "1024"
+      }
+    },
+
+    {
+      "name": "rpi5",
+      "inherits": "base",
+      "displayName": "Raspberry Pi 5 — Cortex-A76",
+      "description": "Cross or native compile for Pi 5 / MODEP. Phase vocoder enabled.",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-mcpu=cortex-a76 -march=armv8.2-a -O3 -ffast-math -funroll-loops",
+        "MEGALO_PHASE_VOCODER": "ON",
+        "MEGALO_PV_N": "2048"
+      }
+    },
+
+    {
+      "name": "rpi5-cross",
+      "inherits": "rpi5",
+      "displayName": "Raspberry Pi 5 — cross-compile from x86-64",
+      "description": "Requires aarch64-linux-gnu-g++ toolchain installed on the build host",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER":   "aarch64-linux-gnu-gcc",
+        "CMAKE_CXX_COMPILER": "aarch64-linux-gnu-g++"
+      }
+    }
+  ],
+
+  "buildPresets": [
+    { "name": "native",       "configurePreset": "native" },
+    { "name": "moddwarf-new", "configurePreset": "moddwarf-new" },
+    { "name": "rpi5",         "configurePreset": "rpi5" },
+    { "name": "rpi5-cross",   "configurePreset": "rpi5-cross" }
+  ]
+}
