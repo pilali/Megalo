@@ -196,4 +196,26 @@
         lv2:maximum 10000.0 ;
         lv2:default   500.0 ;
         units:unit  units:ms
+    ] ,
+
+    # ── Granular capture ─────────────────────────────────────────────────
+    [
+        a lv2:ControlPort, lv2:InputPort ;
+        lv2:index   18 ;
+        lv2:symbol  "attack_skip_ms" ;
+        lv2:name    "Attack Skip" ;
+        lv2:minimum   0.0 ;
+        lv2:maximum 100.0 ;
+        lv2:default  30.0 ;
+        units:unit  units:ms
+    ] ,
+    [
+        a lv2:ControlPort, lv2:InputPort ;
+        lv2:index   19 ;
+        lv2:symbol  "grain_size_ms" ;
+        lv2:name    "Grain Size" ;
+        lv2:minimum  20.0 ;
+        lv2:maximum 200.0 ;
+        lv2:default  80.0 ;
+        units:unit  units:ms
     ] .
