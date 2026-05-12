@@ -1,10 +1,11 @@
 ################################################################################
-# megalo — LV2 freeze/sustain effect for MOD Dwarf
+# megalo — LV2 freeze/sustain effect for MOD Dwarf / Raspberry Pi 5
+#
+# To update: set MEGALO_VERSION to the desired commit hash, then rebuild.
 ################################################################################
 
-MEGALO_VERSION = main
-MEGALO_SITE    = https://github.com/pilali/megalo.git
-MEGALO_SITE_METHOD = git
+MEGALO_VERSION = 27277370e7707dc577bdc4fdf9b292f02d7a9530
+MEGALO_SITE    = $(call github,pilali,megalo,$(MEGALO_VERSION))
 MEGALO_BUNDLES = megalo.lv2
 
 define MEGALO_BUILD_CMDS
