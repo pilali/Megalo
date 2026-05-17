@@ -44,9 +44,9 @@
         lv2:index   3 ;
         lv2:symbol  "sample_ms" ;
         lv2:name    "Sample Length" ;
-        lv2:minimum 50.0 ;
+        lv2:minimum 10.0 ;
         lv2:maximum 500.0 ;
-        lv2:default 200.0 ;
+        lv2:default 100.0 ;
         units:unit  units:ms ;
         lv2:portProperty lv2:integer
     ] ,
@@ -214,9 +214,9 @@
         lv2:index   19 ;
         lv2:symbol  "grain_size_ms" ;
         lv2:name    "Grain Size" ;
-        lv2:minimum  20.0 ;
+        lv2:minimum   5.0 ;
         lv2:maximum 200.0 ;
-        lv2:default  80.0 ;
+        lv2:default  60.0 ;
         units:unit  units:ms
     ] ,
 

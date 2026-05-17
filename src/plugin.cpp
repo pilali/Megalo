@@ -160,8 +160,8 @@ static void run(LV2_Handle handle, uint32_t n_samples)
     const float env_sus        = std::clamp(ctl(p, P_ENV_SUS),        0.0f,   1.0f);
     const float env_rel        = std::clamp(ctl(p, P_ENV_REL),        0.0f, 10000.0f);
     const int   attack_skip_ms  = std::clamp(static_cast<int>(ctl(p, P_ATTACK_SKIP_MS)), 0, 100);
-    const int   grain_ms        = std::clamp(static_cast<int>(ctl(p, P_GRAIN_MS)),      20, 200);
-    const int   grain_samples   = std::clamp((int)(sr * grain_ms * 0.001f), 64, FREEZE_MAX_SAMPLES);
+    const int   grain_ms        = std::clamp(static_cast<int>(ctl(p, P_GRAIN_MS)),       5, 200);
+    const int   grain_samples   = std::clamp((int)(sr * grain_ms * 0.001f), 16, FREEZE_MAX_SAMPLES);
     const int   xfade_ms        = std::clamp(static_cast<int>(ctl(p, P_XFADE_MS)),       5, 100);
     const float grain_scatter   = std::clamp(ctl(p, P_GRAIN_SCATTER),                 0.0f, 1.0f);
     const int   retrigger_ms    = std::clamp(static_cast<int>(ctl(p, P_RETRIGGER_MS)), 50, 1000);

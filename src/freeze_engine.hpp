@@ -73,7 +73,9 @@ public:
 
                 if (_state == State::Idle || _state == State::Looping) {
                     int samples  = (int)(_sr * sample_len_ms * 0.001);
-                    _rec_target  = std::clamp(samples, _xfade_len * 4, FREEZE_MAX_SAMPLES);
+                    // Minimum is 64 samples (~1.3 ms at 48 kHz), independent of
+                    // xfade length — _finalise() already caps xfade to loop/4.
+                    _rec_target  = std::clamp(samples, 64, FREEZE_MAX_SAMPLES);
                     _skip_remain = std::max(0, (int)(_sr * attack_skip_ms * 0.001));
                     // Cap fade-in so it can never fill more than a quarter of the loop.
                     _fade_in_len = std::clamp((int)(_sr * capture_fade_ms * 0.001),
