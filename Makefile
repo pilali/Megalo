@@ -2,20 +2,21 @@
 TARGET ?= native
 
 # ── Per-target defaults ────────────────────────────────────────────────────
+# override is needed so cross-compilation targets win over the environment CXX.
 ifeq ($(TARGET),rpi5)
-    CXX      ?= aarch64-linux-gnu-g++
-    CXXFLAGS ?= -std=c++17 -O3 -ffast-math -funroll-loops \
-                -mcpu=cortex-a76 -march=armv8.2-a \
-                -fvisibility=hidden -Wall -Wextra -Wno-unused-parameter
+    override CXX      := aarch64-linux-gnu-g++
+    override CXXFLAGS := -std=c++17 -O3 -ffast-math -funroll-loops \
+                         -mcpu=cortex-a76 -march=armv8.2-a \
+                         -fvisibility=hidden -Wall -Wextra -Wno-unused-parameter
     EXTRA_DEFS = -DMEGALO_PHASE_VOCODER -DMEGALO_PV_N=2048
 
 else ifeq ($(TARGET),moddwarf-new)
     # CXX and CXXFLAGS are injected by mod-plugin-builder (megalo.mk).
     # This target can also be used standalone with the cross-compiler on PATH.
-    CXX      ?= aarch64-modaudio-linux-gnu-g++
-    CXXFLAGS ?= -std=c++17 -O3 -ffast-math \
-                -mcpu=cortex-a35 \
-                -fvisibility=hidden -Wall -Wextra -Wno-unused-parameter
+    override CXX      := aarch64-modaudio-linux-gnu-g++
+    override CXXFLAGS := -std=c++17 -O3 -ffast-math \
+                         -mcpu=cortex-a35 \
+                         -fvisibility=hidden -Wall -Wextra -Wno-unused-parameter
     EXTRA_DEFS = -DMEGALO_PV_N=1024
 
 else  # native
