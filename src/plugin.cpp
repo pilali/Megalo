@@ -10,6 +10,10 @@
 #include "biquad.hpp"
 #include "envelope.hpp"
 
+#ifdef MEGALO_PHASE_VOCODER
+#include "phase_vocoder.hpp"
+#endif
+
 static constexpr char MEGALO_URI[] = "https://github.com/pilali/megalo";
 
 // ── Port indices ───────────────────────────────────────────────────────────
@@ -56,10 +60,17 @@ struct Megalo {
     std::array<const float*, N_CTL> ctl = {};
 
     FreezeEngine freeze;
-    GrainPlayer  gp0;   // base pitch
-    GrainPlayer  gp_d;  // detuned copy
+    GrainPlayer  gp0;   // base pitch (always granular)
+    GrainPlayer  gp_d;  // detuned copy (always granular)
+#ifdef MEGALO_PHASE_VOCODER
+    PhaseVocoder pv1;
+    PhaseVocoder pv2;
+    float        pv1_last_semi = 1e9f;
+    float        pv2_last_semi = 1e9f;
+#else
     GrainPlayer  gp1;   // pitch voice 1
     GrainPlayer  gp2;   // pitch voice 2
+#endif
     Biquad       filter;
     Envelope     envelope;
 
@@ -93,6 +104,10 @@ static LV2_Handle instantiate(const LV2_Descriptor*,
     if (!p) return nullptr;
     p->sample_rate = rate;
     p->freeze.init(rate);
+#ifdef MEGALO_PHASE_VOCODER
+    p->pv1.init(rate);
+    p->pv2.init(rate);
+#endif
     return p;
 }
 
@@ -113,8 +128,14 @@ static void activate(LV2_Handle handle)
     p->freeze.reset();
     p->gp0.reset();
     p->gp_d.reset();
+#ifdef MEGALO_PHASE_VOCODER
+    p->pv1.reset();
+    p->pv2.reset();
+    p->pv1_last_semi = p->pv2_last_semi = 1e9f;
+#else
     p->gp1.reset();
     p->gp2.reset();
+#endif
     p->filter.reset();
     p->envelope.reset();
     p->lfo_phase = 0.0;
@@ -168,9 +189,15 @@ static void run(LV2_Handle handle, uint32_t n_samples)
 
     p->envelope.set(env_atk, env_dcy, env_sus, env_rel, sr);
 
-    const double lfo_inc      = static_cast<double>(chorus_rate) / p->sample_rate;
-    const float  v1_speed     = static_cast<float>(semi_to_ratio(p1_semi));
-    const float  v2_speed     = static_cast<float>(semi_to_ratio(p2_semi));
+    const double lfo_inc = static_cast<double>(chorus_rate) / p->sample_rate;
+
+#ifdef MEGALO_PHASE_VOCODER
+    if (p1_semi != p->pv1_last_semi) { p->pv1.set_pitch(p1_semi); p->pv1_last_semi = p1_semi; }
+    if (p2_semi != p->pv2_last_semi) { p->pv2.set_pitch(p2_semi); p->pv2_last_semi = p2_semi; }
+#else
+    const float v1_speed = static_cast<float>(semi_to_ratio(p1_semi));
+    const float v2_speed = static_cast<float>(semi_to_ratio(p2_semi));
+#endif
 
     // ── Sample loop ────────────────────────────────────────────────────────
     for (uint32_t i = 0; i < n_samples; ++i) {
@@ -184,8 +211,13 @@ static void run(LV2_Handle handle, uint32_t n_samples)
         } else if (evt == FreezeEvent::LoopReady) {
             p->gp0.reset();
             p->gp_d.reset();
+#ifdef MEGALO_PHASE_VOCODER
+            p->pv1.reset();
+            p->pv2.reset();
+#else
             p->gp1.reset();
             p->gp2.reset();
+#endif
             p->envelope.trigger();
         }
 
@@ -203,8 +235,13 @@ static void run(LV2_Handle handle, uint32_t n_samples)
 
         const float v0 = p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
         const float vd = p->gp_d.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed);
+#ifdef MEGALO_PHASE_VOCODER
+        const float v1 = (llen > 0) ? p->pv1.process(ldata, llen) : 0.0f;
+        const float v2 = (llen > 0) ? p->pv2.process(ldata, llen) : 0.0f;
+#else
         const float v1 = p->gp1.process(ldata, llen, grain_samples, grain_xfade_smp, v1_speed);
         const float v2 = p->gp2.process(ldata, llen, grain_samples, grain_xfade_smp, v2_speed);
+#endif
 
         // Mix: detune_blend fades between dry base and detuned base
         const float base_sig  = v0 * (1.0f - detune_blend) + vd * detune_blend;
