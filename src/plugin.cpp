@@ -83,7 +83,8 @@ struct Megalo {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 static inline float ctl(const Megalo* p, Port port) noexcept {
-    return *p->ctl[port - 2];
+    const float* ptr = p->ctl[port - 2];
+    return ptr ? *ptr : 0.0f;
 }
 
 static inline double semi_to_ratio(float semi) noexcept {
