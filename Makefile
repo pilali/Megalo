@@ -31,7 +31,7 @@ LV2FLAGS ?= $(shell pkg-config --cflags lv2 2>/dev/null)
 BUNDLE  = megalo.lv2
 BINARY  = $(BUNDLE)/megalo.so
 SOURCES = src/plugin.cpp
-HEADERS = src/freeze_engine.hpp src/granular_looper.hpp src/biquad.hpp src/envelope.hpp src/phase_vocoder.hpp
+HEADERS = src/freeze_engine.hpp src/granular_looper.hpp src/biquad.hpp src/envelope.hpp
 
 all: $(BINARY)
 

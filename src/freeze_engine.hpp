@@ -7,27 +7,26 @@ static constexpr int FREEZE_MAX_SR      = 96000;
 static constexpr int FREEZE_MAX_CAP_MS  = 500;
 static constexpr int FREEZE_MAX_SAMPLES = FREEZE_MAX_SR * FREEZE_MAX_CAP_MS / 1000; // 48 000
 
-// Extra recording margin added on top of sample_ms before the seam search.
-// 120 ms ≈ 10 fundamental periods of the lowest guitar string (~82 Hz),
-// giving the search enough candidate windows to find a clean loop point.
+// Extra recording margin for the seam search (ms beyond sample_ms).
+// Covers ~10 fundamental periods of the lowest guitar string (~82 Hz).
 static constexpr int SEARCH_EXTRA_MS = 120;
 
 enum class FreezeEvent { None = 0, Onset = 1, LoopReady = 2 };
 
 // Forward-capture freeze engine with automatic loop-point search.
 //
+// Two separate buffers keep the old loop audible during capture:
+//   _loop[] — recording + search scratch space (overwritten each capture)
+//   _play[] — last validated loop, never interrupted during a new capture
+//
 // State machine:
 //   Idle        — waiting for onset
 //   PendingSkip — onset detected, counting down attack_skip_ms
-//   Recording   — writing live audio into a search buffer
-//                 (sample_ms + SEARCH_EXTRA_MS samples)
-//   Looping     — best sample_ms window extracted; available for playback
+//   Recording   — writing into _loop[] (sample_ms + SEARCH_EXTRA_MS)
+//   Looping     — best window copied to _play[], ready for playback
 //
-// After recording the search buffer, _search_and_finalise() scores every
-// candidate start position (stride 4) by the sum-of-squared-differences
-// between its first and last CMP samples, then extracts the window with
-// the lowest score.  A raised-cosine crossfade is baked at the loop
-// boundary and a half-Hann fade-in is applied to the loop head.
+// loop_data() / loop_len() always return _play[], so GrainPlayers
+// continue reading the previous loop while a new one is being recorded.
 class FreezeEngine {
 public:
     void init(double sample_rate) noexcept {
@@ -39,7 +38,8 @@ public:
 
     void reset() noexcept {
         std::memset(_loop, 0, sizeof(_loop));
-        _loop_len      = 0;
+        std::memset(_play, 0, sizeof(_play));
+        _play_len      = 0;
         _loop_target   = 0;
         _state         = State::Idle;
         _skip_remain   = 0;
@@ -53,6 +53,9 @@ public:
         _rms_slow      = 1e-10f;
     }
 
+    // All timing constants are passed per-block so the host can update them.
+    // xfade_ms / retrigger_ms / capture_fade_ms are kept internal (not exposed
+    // as user ports) — callers pass fixed values from plugin.cpp.
     FreezeEvent process(float x, float threshold,
                         int sample_len_ms, int attack_skip_ms,
                         int xfade_ms, int retrigger_ms,
@@ -80,7 +83,6 @@ public:
                 if (_state == State::Idle || _state == State::Looping) {
                     _loop_target = std::clamp((int)(_sr * sample_len_ms * 0.001),
                                               64, FREEZE_MAX_SAMPLES);
-                    // Record extra samples so the seam search has room to work.
                     const int extra = (int)(_sr * SEARCH_EXTRA_MS * 0.001);
                     _rec_target  = std::min(_loop_target + extra, FREEZE_MAX_SAMPLES);
                     _skip_remain = std::max(0, (int)(_sr * attack_skip_ms * 0.001));
@@ -101,7 +103,7 @@ public:
             } else {
                 _state   = State::Recording;
                 _rec_pos = 0;
-                _loop[_rec_pos++] = x;   // raw — fade-in applied post-search
+                _loop[_rec_pos++] = x;
                 if (_rec_pos >= _rec_target) {
                     _search_and_finalise();
                     evt = FreezeEvent::LoopReady;
@@ -110,7 +112,7 @@ public:
             break;
 
         case State::Recording:
-            _loop[_rec_pos++] = x;       // raw — fade-in applied post-search
+            _loop[_rec_pos++] = x;
             if (_rec_pos >= _rec_target) {
                 _search_and_finalise();
                 evt = FreezeEvent::LoopReady;
@@ -124,34 +126,14 @@ public:
         return evt;
     }
 
-    float read(double speed, double& pos) const noexcept {
-        if (_state != State::Looping || _loop_len == 0) return 0.0f;
-        while (pos >= _loop_len) pos -= _loop_len;
-        while (pos <  0.0)       pos += _loop_len;
-        const int   i0   = (int)pos;
-        const int   i1   = (i0 + 1) % _loop_len;
-        const float frac = (float)(pos - i0);
-        pos += speed;
-        return _loop[i0] + frac * (_loop[i1] - _loop[i0]);
-    }
-
-    bool         is_frozen()  const noexcept { return _state == State::Looping && _loop_len > 0; }
-    const float* loop_data()  const noexcept { return (_state == State::Looping) ? _loop : nullptr; }
-    int          loop_len()   const noexcept { return (_state == State::Looping) ? _loop_len : 0; }
+    // _play[] is always served, even during Recording — keeps old loop audible.
+    const float* loop_data() const noexcept { return (_play_len > 0) ? _play : nullptr; }
+    int          loop_len()  const noexcept { return _play_len; }
+    bool         is_frozen() const noexcept { return _play_len > 0; }
 
 private:
     enum class State { Idle, PendingSkip, Recording, Looping };
 
-    // Search the recorded buffer for the best loop_target-sample window.
-    //
-    // Score(p) = Σ (head[k] − tail[k])²  for k in [0, CMP)
-    //   head = _loop + p
-    //   tail = _loop + p + target_len − CMP
-    //
-    // A low score means the first CMP samples of the window closely match
-    // the last CMP samples → minimal audible discontinuity at the loop point.
-    // Stride 4 gives 4× speedup with a resolution of ~83 µs at 48 kHz,
-    // which is finer than any pitch period of interest.
     void _search_and_finalise() noexcept {
         const int search_len = _rec_pos;
         const int target_len = std::min(_loop_target, search_len);
@@ -168,39 +150,34 @@ private:
                 const float d = head[k] - tail[k];
                 score += d * d;
             }
-            if (score < best_score) {
-                best_score = score;
-                best_start = p;
-            }
+            if (score < best_score) { best_score = score; best_start = p; }
         }
 
-        if (best_start > 0)
-            std::memmove(_loop, _loop + best_start, target_len * sizeof(float));
+        // Copy best window into the playback buffer (never interrupts playback).
+        std::memcpy(_play, _loop + best_start, target_len * sizeof(float));
+        _play_len = target_len;
 
-        _loop_len = target_len;
-
-        // Apply half-Hann fade-in to the loop head.
-        const int fi = std::min(_fade_in_len, _loop_len / 4);
+        // Half-Hann fade-in at loop head.
+        const int fi = std::min(_fade_in_len, _play_len / 4);
         for (int i = 0; i < fi; ++i) {
             const float t = (float)i / (float)fi;
-            _loop[i] *= 0.5f * (1.0f - std::cos(3.14159265f * t));
+            _play[i] *= 0.5f * (1.0f - std::cos(3.14159265f * t));
         }
 
-        _apply_xfade();
+        // Raised-cosine crossfade baked at loop boundary.
+        const int xf = std::min(_xfade_len, _play_len / 4);
+        for (int i = 0; i < xf; ++i) {
+            const float w    = 0.5f * (1.0f - std::cos(3.14159265f * (float)i / (float)(xf - 1)));
+            const int   tail = _play_len - xf + i;
+            _play[tail] = _play[tail] * (1.0f - w) + _play[i] * w;
+        }
+
         _state = State::Looping;
     }
 
-    void _apply_xfade() noexcept {
-        const int xf = std::min(_xfade_len, _loop_len / 4);
-        for (int i = 0; i < xf; ++i) {
-            const float w    = 0.5f * (1.0f - std::cos(3.14159265f * (float)i / (float)(xf - 1)));
-            const int   tail = _loop_len - xf + i;
-            _loop[tail] = _loop[tail] * (1.0f - w) + _loop[i] * w;
-        }
-    }
-
-    float  _loop[FREEZE_MAX_SAMPLES] = {};
-    int    _loop_len      = 0;
+    float  _loop[FREEZE_MAX_SAMPLES] = {};  // recording + search scratch
+    float  _play[FREEZE_MAX_SAMPLES] = {};  // active playback loop
+    int    _play_len      = 0;
     int    _loop_target   = 0;
     int    _xfade_len     = 512;
     int    _fade_in_len   = 0;
