@@ -89,6 +89,12 @@ static inline double semi_to_ratio(float semi) noexcept {
     return std::pow(2.0, static_cast<double>(semi) / 12.0);
 }
 
+// Rational soft clipper: transparent near 0, asymptotically ±1.
+// Equivalent to tanh but cheaper (no transcendental).
+static inline float soft_clip(float x) noexcept {
+    return x / (1.0f + std::abs(x));
+}
+
 // ── LV2 callbacks ──────────────────────────────────────────────────────────
 static LV2_Handle instantiate(const LV2_Descriptor*,
                                double rate,
@@ -246,7 +252,7 @@ static void run(LV2_Handle handle, uint32_t n_samples)
         freeze_sig  = p->filter.process(freeze_sig);
         freeze_sig *= p->envelope.process();
 
-        out[i] = x * (1.0f - blend) + freeze_sig * blend;
+        out[i] = soft_clip(x * (1.0f - blend) + freeze_sig * blend);
     }
 }
 
