@@ -8,11 +8,19 @@ MEGALO_VERSION = 04655aaff6276b2095ff77610049866925aded54
 MEGALO_SITE    = $(call github,pilali,megalo,$(MEGALO_VERSION))
 MEGALO_BUNDLES = megalo.lv2
 
+# Enable PhaseVocoder pitch shifter on RPi5 (Cortex-A76 / ARMv8.2-A).
+# On MOD Dwarf (Cortex-A35) the GrainPlayer fallback is used instead.
+ifeq ($(BR2_cortex_a76),y)
+MEGALO_PV_DEFS = -DMEGALO_PHASE_VOCODER -DMEGALO_PV_N=2048
+else
+MEGALO_PV_DEFS =
+endif
+
 define MEGALO_BUILD_CMDS
 	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) \
 		CXX="$(TARGET_CXX)" \
 		STRIP="$(TARGET_STRIP)" \
-		CXXFLAGS="$(TARGET_CXXFLAGS) -std=c++17 -O3 -ffast-math -fvisibility=hidden"
+		CXXFLAGS="$(TARGET_CXXFLAGS) -std=c++17 -O3 -ffast-math -fvisibility=hidden $(MEGALO_PV_DEFS)"
 endef
 
 define MEGALO_INSTALL_TARGET_CMDS
