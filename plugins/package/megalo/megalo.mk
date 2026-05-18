@@ -18,6 +18,7 @@ endif
 
 define MEGALO_BUILD_CMDS
 	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) \
+		TARGET=moddwarf-new \
 		CXX="$(TARGET_CXX)" \
 		STRIP="$(TARGET_STRIP)" \
 		CXXFLAGS="$(TARGET_CXXFLAGS) -std=c++17 -O3 -ffast-math -fvisibility=hidden $(MEGALO_PV_DEFS)"

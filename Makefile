@@ -11,12 +11,12 @@ ifeq ($(TARGET),rpi5)
     EXTRA_DEFS = -DMEGALO_PHASE_VOCODER -DMEGALO_PV_N=2048
 
 else ifeq ($(TARGET),moddwarf-new)
-    # CXX and CXXFLAGS are injected by mod-plugin-builder (megalo.mk).
-    # This target can also be used standalone with the cross-compiler on PATH.
-    override CXX      := aarch64-modaudio-linux-gnu-g++
-    override CXXFLAGS := -std=c++17 -O3 -ffast-math \
-                         -mcpu=cortex-a35 \
-                         -fvisibility=hidden -Wall -Wextra -Wno-unused-parameter
+    # mod-plugin-builder injects CXX and CXXFLAGS via command-line args.
+    # Use ?= so those take precedence; fallbacks serve only for manual builds.
+    CXX      ?= aarch64-modaudio-linux-gnu-g++
+    CXXFLAGS ?= -std=c++17 -O3 -ffast-math \
+                -mcpu=cortex-a35 \
+                -fvisibility=hidden -Wall -Wextra -Wno-unused-parameter
     EXTRA_DEFS = -DMEGALO_PV_N=1024
 
 else  # native

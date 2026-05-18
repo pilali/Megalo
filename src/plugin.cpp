@@ -189,7 +189,10 @@ static void run(LV2_Handle handle, uint32_t n_samples)
 
     p->envelope.set(env_atk, env_dcy, env_sus, env_rel, sr);
 
-    const double lfo_inc = static_cast<double>(chorus_rate) / p->sample_rate;
+    const double lfo_inc  = static_cast<double>(chorus_rate) / p->sample_rate;
+    // det_speed range per sample: base_speed * 2^(±detune_ct/1200).
+    // Precompute the max ratio; the per-sample LFO modulates within [-1,+1].
+    const double det_ratio = std::pow(2.0, static_cast<double>(detune_ct) / 1200.0);
 
 #ifdef MEGALO_PHASE_VOCODER
     if (p1_semi != p->pv1_last_semi) { p->pv1.set_pitch(p1_semi); p->pv1_last_semi = p1_semi; }
@@ -229,9 +232,10 @@ static void run(LV2_Handle handle, uint32_t n_samples)
         const float*   ldata = p->freeze.loop_data();
         const int      llen  = p->freeze.loop_len();
 
-        // Detuned speed: base ± LFO modulated by detune_cents
+        // Detuned speed: linear interpolation of 2^(±detune_ct/1200) driven by LFO.
+        // Avoids per-sample std::pow; det_ratio = 2^(detune_ct/1200) precomputed above.
         const float det_speed = base_speed *
-            static_cast<float>(std::pow(2.0, static_cast<double>(detune_ct) * lfo / 1200.0));
+            static_cast<float>(1.0 + (det_ratio - 1.0) * lfo);
 
         const float v0 = p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
         const float vd = p->gp_d.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed);
