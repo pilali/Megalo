@@ -37,9 +37,9 @@ enum Port : uint32_t {
     P_ENV_SUS        = 16,   // sustain level      [0 – 1]
     P_ENV_REL        = 17,   // release ms         [0 – 10000]
     P_ATTACK_SKIP_MS = 18,   // skip after onset   [0 – 100]  ms
-    P_GRAIN_MS       = 19,   // granular grain     [20 – 200] ms
+    P_GRAIN_MS       = 19,   // grain duration     [5 – 200]  ms
     P_XFADE_MS       = 20,   // loop boundary xfade [5 – 100] ms
-    P_GRAIN_SCATTER  = 21,   // grain jitter       [0 – 1]
+    P_GRAIN_XFADE_MS = 21,   // grain crossfade    [5 – 100]  ms
     P_RETRIGGER_MS   = 22,   // onset refractory   [50 – 1000] ms
     P_BASE_PITCH     = 23,   // base voice pitch   [-12 – +12] semitones
     P_CAPTURE_FADE   = 24,   // capture fade-in    [0 – 50] ms
@@ -56,8 +56,8 @@ struct Megalo {
     float*       audio_out = nullptr;
     std::array<const float*, N_CTL> ctl = {};
 
-    FreezeEngine   freeze;
-    GranularLooper granular;
+    FreezeEngine freeze;
+    GrainPlayer  granular;
     Biquad         filter;
     Envelope       envelope;
 
@@ -160,10 +160,11 @@ static void run(LV2_Handle handle, uint32_t n_samples)
     const float env_sus        = std::clamp(ctl(p, P_ENV_SUS),        0.0f,   1.0f);
     const float env_rel        = std::clamp(ctl(p, P_ENV_REL),        0.0f, 10000.0f);
     const int   attack_skip_ms  = std::clamp(static_cast<int>(ctl(p, P_ATTACK_SKIP_MS)), 0, 100);
-    const int   grain_ms        = std::clamp(static_cast<int>(ctl(p, P_GRAIN_MS)),       5, 200);
-    const int   grain_samples   = std::clamp((int)(sr * grain_ms * 0.001f), 16, FREEZE_MAX_SAMPLES);
-    const int   xfade_ms        = std::clamp(static_cast<int>(ctl(p, P_XFADE_MS)),       5, 100);
-    const float grain_scatter   = std::clamp(ctl(p, P_GRAIN_SCATTER),                 0.0f, 1.0f);
+    const int   grain_ms        = std::clamp(static_cast<int>(ctl(p, P_GRAIN_MS)),        5, 200);
+    const int   grain_samples   = std::clamp((int)(sr * grain_ms  * 0.001f), 16, FREEZE_MAX_SAMPLES);
+    const int   xfade_ms        = std::clamp(static_cast<int>(ctl(p, P_XFADE_MS)),        5, 100);
+    const int   grain_xfade_ms  = std::clamp(static_cast<int>(ctl(p, P_GRAIN_XFADE_MS)),  5, 100);
+    const int   grain_xfade_smp = std::clamp((int)(sr * grain_xfade_ms * 0.001f), 8, grain_samples / 2);
     const int   retrigger_ms    = std::clamp(static_cast<int>(ctl(p, P_RETRIGGER_MS)), 50, 1000);
     const float base_pitch      = std::clamp(ctl(p, P_BASE_PITCH),                  -12.0f, 12.0f);
     const float base_speed      = static_cast<float>(std::pow(2.0, base_pitch / 12.0));
@@ -230,13 +231,13 @@ static void run(LV2_Handle handle, uint32_t n_samples)
         float v0, v1, v2;
 
 #ifdef MEGALO_PHASE_VOCODER
-        v0 = p->granular.process(ldata, llen, grain_samples, grain_scatter, base_speed);
+        v0 = p->granular.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
         v1 = (llen > 0) ? p->pv1.process(ldata, llen) : 0.0f;
         v2 = (llen > 0) ? p->pv2.process(ldata, llen) : 0.0f;
 #else
         const double detune_ratio = std::pow(2.0, static_cast<double>(detune_ct) * lfo / 1200.0);
         const double speed_v1     = semi_to_ratio(p1_semi) * detune_ratio;
-        v0 = p->granular.process(ldata, llen, grain_samples, grain_scatter, base_speed);
+        v0 = p->granular.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
         v1 = p->freeze.read(speed_v1, p->pos[0]);
         v2 = p->freeze.read(speed_v2, p->pos[1]);
 #endif

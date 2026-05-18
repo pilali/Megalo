@@ -234,11 +234,12 @@
     [
         a lv2:ControlPort, lv2:InputPort ;
         lv2:index   21 ;
-        lv2:symbol  "grain_scatter" ;
-        lv2:name    "Grain Scatter" ;
-        lv2:minimum 0.0 ;
-        lv2:maximum 1.0 ;
-        lv2:default 0.2
+        lv2:symbol  "grain_xfade_ms" ;
+        lv2:name    "Grain Crossfade" ;
+        lv2:minimum  5.0 ;
+        lv2:maximum 100.0 ;
+        lv2:default  15.0 ;
+        units:unit  units:ms
     ] ,
     [
         a lv2:ControlPort, lv2:InputPort ;
