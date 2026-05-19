@@ -41,7 +41,10 @@ enum Port : uint32_t {
     P_ENV_DCY        = 20,   // decay   ms           [0 – 5000]
     P_ENV_SUS        = 21,   // sustain level        [0 – 1]
     P_ENV_REL        = 22,   // release ms           [0 – 10000]
-    P_COUNT          = 23
+    P_DETUNE_EN      = 23,   // detune on/off        [0, 1]
+    P_PITCH1_EN      = 24,   // voice-1 on/off       [0, 1]
+    P_PITCH2_EN      = 25,   // voice-2 on/off       [0, 1]
+    P_COUNT          = 26
 };
 
 static constexpr uint32_t N_CTL = P_COUNT - 2;
@@ -176,6 +179,9 @@ static void run(LV2_Handle handle, uint32_t n_samples)
     const float env_dcy       = std::clamp(ctl(p, P_ENV_DCY),       0.0f,  5000.0f);
     const float env_sus       = std::clamp(ctl(p, P_ENV_SUS),       0.0f,   1.0f);
     const float env_rel       = std::clamp(ctl(p, P_ENV_REL),       0.0f, 10000.0f);
+    const bool  detune_en     = ctl(p, P_DETUNE_EN) >= 0.5f;
+    const bool  pitch1_en     = ctl(p, P_PITCH1_EN) >= 0.5f;
+    const bool  pitch2_en     = ctl(p, P_PITCH2_EN) >= 0.5f;
 
     // ── Filter ────────────────────────────────────────────────────────────
     if (filt_type != p->cached_ftype || filt_cutoff != p->cached_cutoff || filt_q != p->cached_q) {
@@ -249,8 +255,12 @@ static void run(LV2_Handle handle, uint32_t n_samples)
 #endif
 
         // Mix: detune_blend fades between dry base and detuned base
-        const float base_sig  = v0 * (1.0f - detune_blend) + vd * detune_blend;
-        float freeze_sig = base_sig + v1 * p1_lvl + v2 * p2_lvl;
+        const float base_sig = detune_en
+            ? v0 * (1.0f - detune_blend) + vd * detune_blend
+            : v0;
+        float freeze_sig = base_sig
+            + (pitch1_en ? v1 * p1_lvl : 0.0f)
+            + (pitch2_en ? v2 * p2_lvl : 0.0f);
 
         freeze_sig  = p->filter.process(freeze_sig);
         freeze_sig *= p->envelope.process();

@@ -250,4 +250,36 @@
         lv2:maximum 10000.0 ;
         lv2:default   500.0 ;
         units:unit  units:ms
+    ] ,
+
+    # ── Enable / Disable (assignables aux footswitches) ──────────────────
+    [
+        a lv2:InputPort, lv2:ControlPort ;
+        lv2:index 23 ;
+        lv2:symbol "detune_enable" ;
+        lv2:name "Detune Enable" ;
+        lv2:portProperty lv2:integer, lv2:toggled ;
+        lv2:default 0 ;
+        lv2:minimum 0 ;
+        lv2:maximum 1 ;
+    ] ,
+    [
+        a lv2:InputPort, lv2:ControlPort ;
+        lv2:index 24 ;
+        lv2:symbol "pitch1_enable" ;
+        lv2:name "Voice 1 Enable" ;
+        lv2:portProperty lv2:integer, lv2:toggled ;
+        lv2:default 0 ;
+        lv2:minimum 0 ;
+        lv2:maximum 1 ;
+    ] ,
+    [
+        a lv2:InputPort, lv2:ControlPort ;
+        lv2:index 25 ;
+        lv2:symbol "pitch2_enable" ;
+        lv2:name "Voice 2 Enable" ;
+        lv2:portProperty lv2:integer, lv2:toggled ;
+        lv2:default 0 ;
+        lv2:minimum 0 ;
+        lv2:maximum 1 ;
     ] .
