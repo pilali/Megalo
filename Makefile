@@ -8,6 +8,10 @@ ifeq ($(TARGET),rpi5)
     override CXXFLAGS := -std=c++17 -O3 -ffast-math -funroll-loops \
                          -mcpu=cortex-a76 -march=armv8.2-a \
                          -fvisibility=hidden -Wall -Wextra -Wno-unused-parameter
+    # Static libstdc++/libgcc: embed the C++ runtime so the .so doesn't depend
+    # on the target system's libstdc++ version (Ubuntu's aarch64-linux-gnu-g++
+    # uses GLIBCXX symbols that mod-system's Buildroot libstdc++ doesn't have).
+    override LDFLAGS  := -static-libstdc++ -static-libgcc
     EXTRA_DEFS = -DMEGALO_PHASE_VOCODER -DMEGALO_PV_N=2048
 
 else ifeq ($(TARGET),moddwarf-new)
@@ -37,7 +41,7 @@ HEADERS = src/freeze_engine.hpp src/granular_looper.hpp src/biquad.hpp src/envel
 all: $(BINARY)
 
 $(BINARY): $(SOURCES) $(HEADERS)
-	$(CXX) $(CXXFLAGS) $(EXTRA_DEFS) $(LV2FLAGS) -fPIC -shared -o $@ $(SOURCES)
+	$(CXX) $(CXXFLAGS) $(EXTRA_DEFS) $(LV2FLAGS) -fPIC -shared -o $@ $(SOURCES) $(LDFLAGS)
 
 clean:
 	rm -f $(BINARY)
