@@ -5,7 +5,10 @@ TARGET ?= native
 # override is needed so cross-compilation targets win over the environment CXX.
 ifeq ($(TARGET),rpi5)
     override CXX      := aarch64-linux-gnu-g++
+    # -fno-tree-vectorize avoids emitting calls to libmvec (vectorized math),
+    # which isn't packaged on the RPi5 mod/pistomp Buildroot system.
     override CXXFLAGS := -std=c++17 -O3 -ffast-math -funroll-loops \
+                         -fno-tree-vectorize \
                          -mcpu=cortex-a76 -march=armv8.2-a \
                          -fvisibility=hidden -Wall -Wextra -Wno-unused-parameter
     # Static libstdc++/libgcc: embed the C++ runtime so the .so doesn't depend
