@@ -48,6 +48,11 @@ add_custom_command(TARGET megalo POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
         "${CMAKE_SOURCE_DIR}/megalo.lv2/manifest.ttl"
         "${CMAKE_SOURCE_DIR}/megalo.lv2/megalo.ttl"
+        "${CMAKE_SOURCE_DIR}/megalo.lv2/Choir.ttl"
+        "${CMAKE_SOURCE_DIR}/megalo.lv2/Fast.ttl"
+        "${CMAKE_SOURCE_DIR}/megalo.lv2/Good.ttl"
+        "${CMAKE_SOURCE_DIR}/megalo.lv2/Good_2.ttl"
+        "${CMAKE_SOURCE_DIR}/megalo.lv2/Grainy.ttl"
         "${BUNDLE_DIR}/"
     COMMENT "Copying TTL files to bundle"
 )
