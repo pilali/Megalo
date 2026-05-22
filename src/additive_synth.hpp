@@ -1,81 +1,55 @@
 #pragma once
-#include "hn_analyzer.hpp"
 #include <cmath>
-#include <algorithm>
+#include <cstdint>
+#include "hn_analyzer.hpp"
 
-// ── Additive synthesiser ───────────────────────────────────────────────────
-// Driven by HNState (from hn_analyze). Produces one sample per process() call.
-// Call reset() on LoopReady, set_pitch_ratio() per block, process() per sample.
+// ── Additive re-synthesis ──────────────────────────────────────────────────
+// Driven by HNState produced by hn_analyze().
+// Per-sample: sum of HN_MAX_PARTIALS sinusoids + shaped noise residual.
 
-// 7th-order Taylor sin — error < 2e-5, no libm call
 static inline float hn_sin(float x) noexcept {
-    // Wrap to [-π, π]
-    constexpr float PI  = 3.14159265f;
-    constexpr float TPI = 6.28318530f;
-    x -= TPI * std::floor((x + PI) / TPI);
+    // 7th-order Taylor — good to ~0.1 % for |x| < π
+    x -= static_cast<int>(x * (1.0f / 6.2831853f)) * 6.2831853f;
+    if (x >  3.1415927f) x -= 6.2831853f;
+    if (x < -3.1415927f) x += 6.2831853f;
     const float x2 = x * x;
-    return x * (1.0f - x2 * (0.16666667f - x2 * (0.00833333f - x2 * 0.00019841f)));
+    return x * (1.0f + x2 * (-0.16666667f + x2 * (0.00833333f - x2 * 0.000198413f)));
 }
 
 class AdditiveSynth {
 public:
     void reset(const HNState& s, float sr) noexcept {
-        _sr          = sr;
-        _f0          = s.f0;
-        _n           = s.n_partials;
+        _sr  = sr;
+        _state = s;
+        for (int k = 0; k < HN_MAX_PARTIALS; ++k) _phase[k] = s.harm_phase[k];
+        _noise_hp = 0.0f;
         _pitch_ratio = 1.0f;
-        _noise_rms   = s.noise_rms;
-        for (int k = 0; k < _n; ++k) {
-            _amp  [k] = s.harm_amp  [k];
-            _phase[k] = s.harm_phase[k];   // start at captured phase
-        }
-        _noise_state = 0.0f;
     }
 
-    void set_pitch_ratio(float ratio) noexcept {
-        _pitch_ratio = ratio;
-    }
+    void set_pitch_ratio(float r) noexcept { _pitch_ratio = r; }
 
     float process() noexcept {
-        if (_n == 0) return 0.0f;
-
+        if (!_state.valid) return 0.0f;
         float out = 0.0f;
-        const float f0_shifted = _f0 * _pitch_ratio;
-
-        for (int k = 0; k < _n; ++k) {
-            const float freq = f0_shifted * (k + 1);
-            if (freq >= _sr * 0.499f) break;
-            const float inc = 2.0f * 3.14159265f * freq / _sr;
-            out += _amp[k] * hn_sin(_phase[k]);
-            _phase[k] += inc;
-            if (_phase[k] > 3.14159265f) _phase[k] -= 6.28318530f;
+        for (int k = 0; k < _state.n_partials; ++k) {
+            out += _state.harm_amp[k] * hn_sin(_phase[k]);
+            _phase[k] += 6.2831853f * _state.f0 * (k + 1) * _pitch_ratio / _sr;
+            if (_phase[k] > 3.1415927f) _phase[k] -= 6.2831853f;
         }
-
-        // Shaped noise residual (first-order HP to approximate residual spectrum)
-        if (_noise_rms > 1e-6f) {
-            const float white = _lcg() * (1.0f / 2147483648.0f);
-            const float hp    = white - _noise_state;
-            _noise_state      = white * 0.85f;
-            out += hp * _noise_rms * 2.0f;
-        }
-
+        // LCG noise + first-order HP
+        _lcg = _lcg * 1664525u + 1013904223u;
+        const float noise = static_cast<float>(static_cast<int32_t>(_lcg)) * (1.0f / 2147483648.0f);
+        const float hp = noise - _noise_hp;
+        _noise_hp = noise * 0.95f;
+        out += hp * _state.noise_rms;
         return out;
     }
 
 private:
-    float _sr          = 48000.0f;
-    float _f0          = 0.0f;
-    int   _n           = 0;
-    float _pitch_ratio = 1.0f;
-    float _noise_rms   = 0.0f;
-    float _amp  [HN_MAX_PARTIALS] = {};
-    float _phase[HN_MAX_PARTIALS] = {};
-    float _noise_state = 0.0f;
-
-    // Fast LCG for noise — period 2^31
-    uint32_t _seed = 12345u;
-    inline int32_t _lcg() noexcept {
-        _seed = _seed * 1664525u + 1013904223u;
-        return static_cast<int32_t>(_seed);
-    }
+    float    _sr          = 48000.0f;
+    float    _pitch_ratio = 1.0f;
+    float    _phase[HN_MAX_PARTIALS] = {};
+    float    _noise_hp    = 0.0f;
+    uint32_t _lcg         = 12345u;
+    HNState  _state       = {};
 };
