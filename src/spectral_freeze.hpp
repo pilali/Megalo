@@ -4,7 +4,7 @@
 #include <cstring>
 #include <algorithm>
 
-// ── Spectral freeze (Paulstretch-style) ─────────────────────────────────────────────
+// ── Spectral freeze (Paulstretch-style) ────────────────────────────────────
 // On LoopReady, capture the magnitude spectrum of the loop (averaged across a
 // few analysis frames to smooth out transients).  At synthesis time, rebuild
 // the complex spectrum with the frozen magnitudes and FRESH RANDOM PHASES
