@@ -1,15 +1,15 @@
 ################################################################################
-# megaloHN — LV2 freeze/sustain + H+N additive synthesis for MOD Dwarf / RPi5
+# megaloHN — LV2 freeze / Paulstretch spectral freeze for MOD Dwarf / RPi5
 #
 # To update: set MEGALO_VERSION to the desired commit hash, then rebuild.
 ################################################################################
 
-MEGALO_VERSION = b0376bd8c23a931bec491ba5bdaa30570df460e7
+MEGALO_VERSION = b1fb23c9a6f49a7ea79ea6e27d0bdfca29376259
 MEGALO_SITE    = $(call github,pilali,Megalo,$(MEGALO_VERSION))
 MEGALO_BUNDLES = megaloHN.lv2
 
 # Enable PhaseVocoder pitch shifter on RPi5 (Cortex-A76 / ARMv8.2-A).
-# On MOD Dwarf (Cortex-A35) the GrainPlayer / HN-synth fallback is used.
+# On MOD Dwarf (Cortex-A35) the granular reader is used for pitch voices.
 ifeq ($(BR2_cortex_a76),y)
 MEGALO_PV_DEFS = -DMEGALO_PHASE_VOCODER -DMEGALO_PV_N=2048
 else
@@ -21,8 +21,7 @@ define MEGALO_BUILD_CMDS
 		TARGET=moddwarf-new \
 		CXX="$(TARGET_CXX)" \
 		STRIP="$(TARGET_STRIP)" \
-		CXXFLAGS="$(TARGET_CXXFLAGS) -std=c++17 -O3 -ffast-math -fvisibility=hidden $(MEGALO_PV_DEFS)" \
-		MEGALO_HN_SYNTH=1
+		CXXFLAGS="$(TARGET_CXXFLAGS) -std=c++17 -O3 -ffast-math -fvisibility=hidden $(MEGALO_PV_DEFS)"
 endef
 
 define MEGALO_INSTALL_TARGET_CMDS
