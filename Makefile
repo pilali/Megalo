@@ -43,7 +43,8 @@ BUNDLE  = megaloHN.lv2
 BINARY  = $(BUNDLE)/megaloHN.so
 SOURCES = src/plugin.cpp src/glibc_compat.cpp
 HEADERS = src/freeze_engine.hpp src/granular_looper.hpp src/biquad.hpp src/envelope.hpp \
-          src/phase_vocoder.hpp src/hn_analyzer.hpp src/additive_synth.hpp src/rave_engine.hpp
+          src/phase_vocoder.hpp src/spectral_freeze.hpp \
+          src/hn_analyzer.hpp src/additive_synth.hpp src/rave_engine.hpp
 
 ifeq ($(MEGALO_HN_SYNTH),1)
     EXTRA_DEFS += -DMEGALO_HN_SYNTH

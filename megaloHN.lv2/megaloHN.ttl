@@ -282,4 +282,14 @@
         lv2:default 0 ;
         lv2:minimum 0 ;
         lv2:maximum 1 ;
+    ] ,
+    [
+        a lv2:InputPort, lv2:ControlPort ;
+        lv2:index 26 ;
+        lv2:symbol "spectral_mode" ;
+        lv2:name "Spectral" ;
+        lv2:portProperty lv2:integer, lv2:toggled ;
+        lv2:default 0 ;
+        lv2:minimum 0 ;
+        lv2:maximum 1 ;
     ] .

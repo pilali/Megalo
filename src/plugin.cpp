@@ -9,6 +9,7 @@
 #include "granular_looper.hpp"
 #include "biquad.hpp"
 #include "envelope.hpp"
+#include "spectral_freeze.hpp"
 
 #ifdef MEGALO_PHASE_VOCODER
 #include "phase_vocoder.hpp"
@@ -52,7 +53,8 @@ enum Port : uint32_t {
     P_DETUNE_EN      = 23,   // detune on/off        [0, 1]
     P_PITCH1_EN      = 24,   // voice-1 on/off       [0, 1]
     P_PITCH2_EN      = 25,   // voice-2 on/off       [0, 1]
-    P_COUNT          = 26
+    P_FREEZE_MODE    = 26,   // 0=Granular 1=Spectral [0, 1]
+    P_COUNT          = 27
 };
 
 static constexpr uint32_t N_CTL = P_COUNT - 2;
@@ -84,6 +86,9 @@ struct Megalo {
 #endif
     Biquad       filter;
     Envelope     envelope;
+
+    SpectralFreeze sf;
+    bool           sf_needs_init = false;
 
     double lfo_phase = 0.0;
 
@@ -163,6 +168,8 @@ static void activate(LV2_Handle handle)
     p->envelope.reset();
     p->lfo_phase = 0.0;
     p->cached_ftype = p->cached_cutoff = p->cached_q = -1.0f;
+    p->sf.reset();
+    p->sf_needs_init = false;
 #ifdef MEGALO_HN_SYNTH
     p->hn_state          = {};
     p->hn_needs_analysis = false;
@@ -205,6 +212,7 @@ static void run(LV2_Handle handle, uint32_t n_samples)
     const bool  detune_en     = ctl(p, P_DETUNE_EN) >= 0.5f;
     const bool  pitch1_en     = ctl(p, P_PITCH1_EN) >= 0.5f;
     const bool  pitch2_en     = ctl(p, P_PITCH2_EN) >= 0.5f;
+    const bool  freeze_mode   = ctl(p, P_FREEZE_MODE) >= 0.5f;
 
     // ── Filter ────────────────────────────────────────────────────────────
     if (filt_type != p->cached_ftype || filt_cutoff != p->cached_cutoff || filt_q != p->cached_q) {
@@ -223,6 +231,11 @@ static void run(LV2_Handle handle, uint32_t n_samples)
     // det_speed range per sample: base_speed * 2^(±detune_ct/1200).
     // Precompute the max ratio; the per-sample LFO modulates within [-1,+1].
     const double det_ratio = std::pow(2.0, static_cast<double>(detune_ct) / 1200.0);
+
+    if (p->sf_needs_init) {
+        p->sf.init(p->freeze.loop_data(), p->freeze.loop_len());
+        p->sf_needs_init = false;
+    }
 
 #ifdef MEGALO_HN_SYNTH
     if (p->hn_needs_analysis) {
@@ -277,6 +290,7 @@ static void run(LV2_Handle handle, uint32_t n_samples)
             p->gp2.reset();
 #endif
             p->envelope.trigger();
+            p->sf_needs_init = true;
 #ifdef MEGALO_HN_SYNTH
             p->hn_needs_analysis = true;
 #endif
@@ -295,15 +309,20 @@ static void run(LV2_Handle handle, uint32_t n_samples)
         const float det_speed = base_speed *
             static_cast<float>(1.0 + (det_ratio - 1.0) * lfo);
 
-        // Base pitch: HN synth when valid, granular otherwise
+        // Base voice: spectral > HN > granular
+        const float sf_out = (freeze_mode && p->sf.valid) ? p->sf.process() : 0.0f;
 #ifdef MEGALO_HN_SYNTH
-        const float v0 = p->hn_state.valid
-            ? p->hn_v0.process()
-            : p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
+        const float v0 = (freeze_mode && p->sf.valid) ? sf_out
+            : (p->hn_state.valid ? p->hn_v0.process()
+            : p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed));
+        const float vd = (freeze_mode && p->sf.valid) ? sf_out
+            : p->gp_d.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed);
 #else
-        const float v0 = p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
+        const float v0 = (freeze_mode && p->sf.valid) ? sf_out
+            : p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
+        const float vd = (freeze_mode && p->sf.valid) ? sf_out
+            : p->gp_d.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed);
 #endif
-        const float vd = p->gp_d.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed);
 
         // Pitch voices: HN > PV > granular
 #if defined(MEGALO_HN_SYNTH)
