@@ -6,7 +6,7 @@
 # then trigger a mod-plugin-builder rebuild.
 ################################################################################
 
-MEGALO_VERSION = bf945316fd9ccb7181c63c054921a61a449ada1a
+MEGALO_VERSION = 90d9f1bec8ecc6233272ebe36b32b65c083548ed
 MEGALO_SITE    = $(call github,pilali,megalo,$(MEGALO_VERSION))
 MEGALO_BUNDLES = megaloHN.lv2
 
@@ -20,7 +20,7 @@ define MEGALO_BUILD_CMDS
 endef
 
 define MEGALO_INSTALL_TARGET_CMDS
-	cp -r $(@D)/megalo.lv2 $(TARGET_DIR)/usr/lib/lv2/
+	cp -r $(@D)/megaloHN.lv2 $(TARGET_DIR)/usr/lib/lv2/
 endef
 
 $(eval $(generic-package))
