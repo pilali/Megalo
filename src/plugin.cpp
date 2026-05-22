@@ -87,7 +87,8 @@ struct Megalo {
     Biquad       filter;
     Envelope     envelope;
 
-    SpectralFreeze sf;
+    SpectralFreeze sf;    // base pitch
+    SpectralFreeze sf_d;  // detuned copy
     bool           sf_needs_init = false;
 
     double lfo_phase = 0.0;
@@ -169,6 +170,7 @@ static void activate(LV2_Handle handle)
     p->lfo_phase = 0.0;
     p->cached_ftype = p->cached_cutoff = p->cached_q = -1.0f;
     p->sf.reset();
+    p->sf_d.reset();
     p->sf_needs_init = false;
 #ifdef MEGALO_HN_SYNTH
     p->hn_state          = {};
@@ -234,6 +236,7 @@ static void run(LV2_Handle handle, uint32_t n_samples)
 
     if (p->sf_needs_init) {
         p->sf.init(p->freeze.loop_data(), p->freeze.loop_len());
+        p->sf_d.init(p->freeze.loop_data(), p->freeze.loop_len());
         p->sf_needs_init = false;
     }
 
@@ -310,17 +313,21 @@ static void run(LV2_Handle handle, uint32_t n_samples)
             static_cast<float>(1.0 + (det_ratio - 1.0) * lfo);
 
         // Base voice: spectral > HN > granular
-        const float sf_out = (freeze_mode && p->sf.valid) ? p->sf.process() : 0.0f;
+        const bool use_sf = freeze_mode && p->sf.valid;
+        if (use_sf) {
+            p->sf.set_pitch_ratio(base_speed);
+            p->sf_d.set_pitch_ratio(det_speed);
+        }
 #ifdef MEGALO_HN_SYNTH
-        const float v0 = (freeze_mode && p->sf.valid) ? sf_out
+        const float v0 = use_sf ? p->sf.process()
             : (p->hn_state.valid ? p->hn_v0.process()
             : p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed));
-        const float vd = (freeze_mode && p->sf.valid) ? sf_out
+        const float vd = use_sf ? p->sf_d.process()
             : p->gp_d.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed);
 #else
-        const float v0 = (freeze_mode && p->sf.valid) ? sf_out
+        const float v0 = use_sf ? p->sf.process()
             : p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
-        const float vd = (freeze_mode && p->sf.valid) ? sf_out
+        const float vd = use_sf ? p->sf_d.process()
             : p->gp_d.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed);
 #endif
 

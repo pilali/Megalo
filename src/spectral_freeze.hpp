@@ -49,6 +49,10 @@ public:
         valid = true;
     }
 
+    // Scales all bin phase advances by ratio (call before or during process()).
+    // ratio=1.0 → natural pitch; ratio=1.02 → ~+2 cents, etc.
+    void set_pitch_ratio(float ratio) noexcept { _pitch_ratio = ratio; }
+
     // Returns one output sample.  Call once per sample in the RT loop.
     float process() noexcept {
         if (!valid) return 0.0f;
@@ -69,6 +73,8 @@ private:
     //  OLA sum is 1.0; the Hann analysis window halves the effective amplitude).
     static constexpr float NORM = 2.0f;
 
+    float _pitch_ratio = 1.0f;
+
     float _mag      [N/2 + 1] = {};
     float _phase    [N/2 + 1] = {};
     float _phase_adv[N/2 + 1] = {};
@@ -83,7 +89,7 @@ private:
         for (int k = 1; k < N/2; ++k) {
             _re[k] = _mag[k] * cosf(_phase[k]);
             _im[k] = _mag[k] * sinf(_phase[k]);
-            _phase[k] += _phase_adv[k];
+            _phase[k] += _phase_adv[k] * _pitch_ratio;
             if (_phase[k] >  k2PI * 0.5f) _phase[k] -= k2PI;
             if (_phase[k] < -k2PI * 0.5f) _phase[k] += k2PI;
         }
