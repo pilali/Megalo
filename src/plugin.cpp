@@ -202,7 +202,15 @@ static void run(LV2_Handle handle, uint32_t n_samples)
     const double det_ratio = std::pow(2.0, static_cast<double>(detune_ct) / 1200.0);
 
 #ifdef MEGALO_PHASE_VOCODER
-    if (p1_semi != p->pv1_last_semi) { p->pv1.set_pitch(p1_semi); p->pv1_last_semi = p1_semi; }
+    const double lfo_now    = std::sin(2.0 * M_PI * p->lfo_phase);
+    const float  pv1_detune = detune_en
+                              ? static_cast<float>(detune_ct * lfo_now / 100.0)
+                              : 0.0f;
+    const float  pv1_semi_mod = p1_semi + pv1_detune;
+    if (pv1_semi_mod != p->pv1_last_semi) {
+        p->pv1.set_pitch(pv1_semi_mod);
+        p->pv1_last_semi = pv1_semi_mod;
+    }
     if (p2_semi != p->pv2_last_semi) { p->pv2.set_pitch(p2_semi); p->pv2_last_semi = p2_semi; }
 #else
     const float v1_speed = static_cast<float>(semi_to_ratio(p1_semi));
