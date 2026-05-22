@@ -14,6 +14,14 @@
 #include "phase_vocoder.hpp"
 #endif
 
+#ifdef MEGALO_HN_SYNTH
+#include "hn_analyzer.hpp"
+#include "additive_synth.hpp"
+#ifdef MEGALO_RAVE
+#include "rave_engine.hpp"
+#endif
+#endif
+
 static constexpr char MEGALO_URI[] = "https://github.com/pilali/megalo";
 
 // ── Port indices ───────────────────────────────────────────────────────────
@@ -78,6 +86,17 @@ struct Megalo {
     float pv1_last_semi   = 1e9f;
     float pv2_last_semi   = 1e9f;
 #endif
+
+#ifdef MEGALO_HN_SYNTH
+    HNState     hn_state;
+    AdditiveSynth hn_v0;   // base voice
+    AdditiveSynth hn_v1;   // pitch voice 1 (+ detune LFO)
+    AdditiveSynth hn_v2;   // pitch voice 2
+    bool hn_needs_analysis = false;
+#ifdef MEGALO_RAVE
+    RaveEngine  rave;
+#endif
+#endif
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -131,6 +150,10 @@ static void activate(LV2_Handle handle)
     p->pv1.reset();
     p->pv2.reset();
     p->pv1_last_semi = p->pv2_last_semi = 1e9f;
+#endif
+#ifdef MEGALO_HN_SYNTH
+    p->hn_state           = HNState{};
+    p->hn_needs_analysis  = false;
 #endif
 }
 
@@ -198,6 +221,35 @@ static void run(LV2_Handle handle, uint32_t n_samples)
     const double lfo_inc   = static_cast<double>(chorus_rate) / p->sample_rate;
     const double speed_v2  = semi_to_ratio(p2_semi);
 
+#ifdef MEGALO_HN_SYNTH
+    // ── H+N analysis (deferred from LoopReady to block boundary) ──────────
+    // hn_analyze() is not RT-safe (several ms); running it here, once per
+    // capture, causes a short click but keeps the per-sample loop clean.
+    if (p->hn_needs_analysis) {
+        const float* ldata_ana = p->freeze.loop_data();
+        const int    llen_ana  = p->freeze.loop_len();
+        if (llen_ana > 0) {
+            p->hn_state = hn_analyze(ldata_ana, llen_ana, sr);
+            p->hn_v0.reset(p->hn_state, sr);
+            p->hn_v1.reset(p->hn_state, sr);
+            p->hn_v2.reset(p->hn_state, sr);
+#ifdef MEGALO_RAVE
+            if (p->rave.valid())
+                p->rave.encode(ldata_ana, llen_ana, sr);
+#endif
+        }
+        p->hn_needs_analysis = false;
+    }
+    // Update pitch targets every block (handles real-time knob changes).
+    if (p->hn_state.valid) {
+        p->hn_v0.set_pitch_ratio(base_speed);
+        const double lfo_blk  = std::sin(2.0 * M_PI * p->lfo_phase);
+        const float  det_semi = static_cast<float>(detune_ct * lfo_blk / 100.0);
+        p->hn_v1.set_pitch_ratio(static_cast<float>(semi_to_ratio(p1_semi + det_semi)));
+        p->hn_v2.set_pitch_ratio(static_cast<float>(semi_to_ratio(p2_semi)));
+    }
+#endif
+
     // ── Sample loop ────────────────────────────────────────────────────────
     for (uint32_t i = 0; i < n_samples; ++i) {
         const float x = in[i];
@@ -216,6 +268,9 @@ static void run(LV2_Handle handle, uint32_t n_samples)
             // New loop is captured — reset playback state and attack.
             p->granular.reset();
             p->pos[0] = p->pos[1] = 0.0;
+#ifdef MEGALO_HN_SYNTH
+            p->hn_needs_analysis = true;   // analysis runs at next block start
+#endif
             p->envelope.trigger();
         }
 
@@ -229,7 +284,22 @@ static void run(LV2_Handle handle, uint32_t n_samples)
 
         float v0, v1, v2;
 
-#ifdef MEGALO_PHASE_VOCODER
+#if defined(MEGALO_HN_SYNTH)
+        // ── Additive H+N synthesis ─────────────────────────────────────────
+        // Falls back to granular/read when F0 was not detected (hn_state.valid).
+        if (p->hn_state.valid) {
+            v0 = p->hn_v0.process();
+            v1 = p->hn_v1.process();
+            v2 = p->hn_v2.process();
+        } else {
+            // Pitched sound not detected → keep granular looper as fallback.
+            const double detune_ratio = std::pow(2.0, static_cast<double>(detune_ct) * lfo / 1200.0);
+            const double speed_v1     = semi_to_ratio(p1_semi) * detune_ratio;
+            v0 = p->granular.process(ldata, llen, grain_samples, grain_scatter, base_speed);
+            v1 = p->freeze.read(speed_v1, p->pos[0]);
+            v2 = p->freeze.read(speed_v2, p->pos[1]);
+        }
+#elif defined(MEGALO_PHASE_VOCODER)
         v0 = p->granular.process(ldata, llen, grain_samples, grain_scatter, base_speed);
         v1 = (llen > 0) ? p->pv1.process(ldata, llen) : 0.0f;
         v2 = (llen > 0) ? p->pv2.process(ldata, llen) : 0.0f;
