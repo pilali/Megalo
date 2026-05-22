@@ -112,6 +112,12 @@ static inline HNState hn_analyze(const float* loop, int loop_len,
     total_power /= N;
     const float residual = total_power - harmonic_power * 0.5f;
     s.noise_rms = (residual > 0.0f) ? std::sqrt(residual) : 0.0f;
-    s.valid     = (s.n_partials > 0);
+
+    // Harmonic-to-noise ratio: power explained by the harmonic model vs total.
+    // A chord fools YIN into a confident (but wrong) monophonic pitch — the
+    // unmodeled notes show up as high residual.  Below ~35 % → polyphonic or
+    // inharmonic source → fall back to granular synthesis silently.
+    const float hnr = (harmonic_power * 0.5f) / (total_power + 1e-9f);
+    s.valid = (s.n_partials > 0) && (hnr >= 0.35f);
     return s;
 }
