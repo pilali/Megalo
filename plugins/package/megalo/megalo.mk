@@ -4,8 +4,8 @@
 # To update: set MEGALO_VERSION to the desired commit hash, then rebuild.
 ################################################################################
 
-MEGALO_VERSION = 58cfce2fc8a10059ea0f96a20fbde6c77abeecc9
-MEGALO_SITE    = $(call github,pilali,megalo,$(MEGALO_VERSION))
+MEGALO_VERSION = b0376bd8c23a931bec491ba5bdaa30570df460e7
+MEGALO_SITE    = $(call github,pilali,Megalo,$(MEGALO_VERSION))
 MEGALO_BUNDLES = megaloHN.lv2
 
 # Enable PhaseVocoder pitch shifter on RPi5 (Cortex-A76 / ARMv8.2-A).
