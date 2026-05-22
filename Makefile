@@ -42,8 +42,8 @@ endif
 # In cross-compilation CXXFLAGS already contains -I$(STAGING_DIR)/usr/include
 LV2FLAGS ?= $(shell pkg-config --cflags lv2 2>/dev/null)
 
-BUNDLE  = megalo.lv2
-BINARY  = $(BUNDLE)/megalo.so
+BUNDLE  = megaloHN.lv2
+BINARY  = $(BUNDLE)/megaloHN.so
 SOURCES = src/plugin.cpp
 HEADERS = src/freeze_engine.hpp src/granular_looper.hpp src/biquad.hpp src/envelope.hpp \
           src/phase_vocoder.hpp src/hn_analyzer.hpp src/additive_synth.hpp src/rave_engine.hpp

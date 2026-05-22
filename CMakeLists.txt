@@ -18,7 +18,7 @@ option(MEGALO_HN_SYNTH
 option(MEGALO_RAVE
     "Enable RAVE neural synthesis decoder stub (RPi 5 only — requires trained model + ONNX RT)" OFF)
 
-set(BUNDLE_DIR "${CMAKE_BINARY_DIR}/megalo.lv2")
+set(BUNDLE_DIR "${CMAKE_BINARY_DIR}/megaloHN.lv2")
 
 add_library(megalo MODULE src/plugin.cpp)
 
@@ -55,15 +55,15 @@ endif()
 
 set_target_properties(megalo PROPERTIES
     PREFIX ""
-    OUTPUT_NAME "megalo"
+    OUTPUT_NAME "megaloHN"
     LIBRARY_OUTPUT_DIRECTORY "${BUNDLE_DIR}"
 )
 
 # Copy TTL files into the build bundle
 add_custom_command(TARGET megalo POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
-        "${CMAKE_SOURCE_DIR}/megalo.lv2/manifest.ttl"
-        "${CMAKE_SOURCE_DIR}/megalo.lv2/megalo.ttl"
+        "${CMAKE_SOURCE_DIR}/megaloHN.lv2/manifest.ttl"
+        "${CMAKE_SOURCE_DIR}/megaloHN.lv2/megaloHN.ttl"
         "${BUNDLE_DIR}/"
     COMMENT "Copying TTL files to bundle"
 )

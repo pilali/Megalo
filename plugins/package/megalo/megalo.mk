@@ -8,7 +8,7 @@
 
 MEGALO_VERSION = bf945316fd9ccb7181c63c054921a61a449ada1a
 MEGALO_SITE    = $(call github,pilali,megalo,$(MEGALO_VERSION))
-MEGALO_BUNDLES = megalo.lv2
+MEGALO_BUNDLES = megaloHN.lv2
 
 define MEGALO_BUILD_CMDS
 	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) \

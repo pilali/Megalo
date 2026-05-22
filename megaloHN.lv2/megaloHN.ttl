@@ -5,10 +5,10 @@
 @prefix pprops: <http://lv2plug.in/ns/ext/port-props#> .
 @prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
 
-<https://github.com/pilali/megalo>
+<https://github.com/pilali/megalo/hn>
     a lv2:Plugin, lv2:EffectPlugin ;
 
-    doap:name    "Megalo" ;
+    doap:name    "MegaloHN" ;
     doap:license <https://spdx.org/licenses/GPL-3.0-or-later.html> ;
 
     lv2:optionalFeature lv2:hardRTCapable ;

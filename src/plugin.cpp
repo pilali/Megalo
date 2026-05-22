@@ -22,7 +22,7 @@
 #endif
 #endif
 
-static constexpr char MEGALO_URI[] = "https://github.com/pilali/megalo";
+static constexpr char MEGALO_URI[] = "https://github.com/pilali/megalo/hn";
 
 // ── Port indices ───────────────────────────────────────────────────────────
 enum Port : uint32_t {
