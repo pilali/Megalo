@@ -1,6 +1,7 @@
 # Build outputs
 megaloHN.lv2/megaloHN.so
 build/
+build_hn/
 
 # Editor / OS
 .DS_Store
