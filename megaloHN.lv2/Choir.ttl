@@ -8,7 +8,7 @@
 
 <Choir.ttl>
 	a pset:Preset ;
-	lv2:appliesTo <https://github.com/pilali/megalo> ;
+	lv2:appliesTo <https://github.com/pilali/megalo/hn> ;
 	rdfs:label "Choir" ;
 	lv2:port [
 		lv2:symbol "attack_skip_ms" ;
@@ -83,4 +83,3 @@
 		lv2:symbol "sample_ms" ;
 		pset:value 206.0
 	] .
-

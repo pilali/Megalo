@@ -36,10 +36,21 @@ endif
 # In cross-compilation CXXFLAGS already contains -I$(STAGING_DIR)/usr/include
 LV2FLAGS ?= $(shell pkg-config --cflags lv2 2>/dev/null)
 
-BUNDLE  = megalo.lv2
-BINARY  = $(BUNDLE)/megalo.so
+MEGALO_HN_SYNTH ?= 0
+MEGALO_RAVE     ?= 0
+
+BUNDLE  = megaloHN.lv2
+BINARY  = $(BUNDLE)/megaloHN.so
 SOURCES = src/plugin.cpp src/glibc_compat.cpp
-HEADERS = src/freeze_engine.hpp src/granular_looper.hpp src/biquad.hpp src/envelope.hpp src/phase_vocoder.hpp
+HEADERS = src/freeze_engine.hpp src/granular_looper.hpp src/biquad.hpp src/envelope.hpp \
+          src/phase_vocoder.hpp src/hn_analyzer.hpp src/additive_synth.hpp src/rave_engine.hpp
+
+ifeq ($(MEGALO_HN_SYNTH),1)
+    EXTRA_DEFS += -DMEGALO_HN_SYNTH
+    ifeq ($(MEGALO_RAVE),1)
+        EXTRA_DEFS += -DMEGALO_RAVE
+    endif
+endif
 
 all: $(BINARY)
 

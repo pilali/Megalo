@@ -14,7 +14,15 @@
 #include "phase_vocoder.hpp"
 #endif
 
-static constexpr char MEGALO_URI[] = "https://github.com/pilali/megalo";
+#ifdef MEGALO_HN_SYNTH
+#include "hn_analyzer.hpp"
+#include "additive_synth.hpp"
+#ifdef MEGALO_RAVE
+#include "rave_engine.hpp"
+#endif
+#endif
+
+static constexpr char MEGALO_URI[] = "https://github.com/pilali/megalo/hn";
 
 // ── Port indices ───────────────────────────────────────────────────────────
 enum Port : uint32_t {
@@ -82,6 +90,17 @@ struct Megalo {
     float cached_ftype  = -1.0f;
     float cached_cutoff = -1.0f;
     float cached_q      = -1.0f;
+
+#ifdef MEGALO_HN_SYNTH
+    HNState       hn_state          = {};
+    AdditiveSynth hn_v0;   // base pitch
+    AdditiveSynth hn_v1;   // pitch voice 1
+    AdditiveSynth hn_v2;   // pitch voice 2
+    bool          hn_needs_analysis = false;
+#ifdef MEGALO_RAVE
+    RaveEngine    rave;
+#endif
+#endif
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -144,6 +163,10 @@ static void activate(LV2_Handle handle)
     p->envelope.reset();
     p->lfo_phase = 0.0;
     p->cached_ftype = p->cached_cutoff = p->cached_q = -1.0f;
+#ifdef MEGALO_HN_SYNTH
+    p->hn_state          = {};
+    p->hn_needs_analysis = false;
+#endif
 }
 
 static void run(LV2_Handle handle, uint32_t n_samples)
@@ -201,6 +224,23 @@ static void run(LV2_Handle handle, uint32_t n_samples)
     // Precompute the max ratio; the per-sample LFO modulates within [-1,+1].
     const double det_ratio = std::pow(2.0, static_cast<double>(detune_ct) / 1200.0);
 
+#ifdef MEGALO_HN_SYNTH
+    if (p->hn_needs_analysis) {
+        const float* ldata_ana = p->freeze.loop_data();
+        const int    llen_ana  = p->freeze.loop_len();
+        p->hn_state = hn_analyze(ldata_ana, llen_ana, sr);
+        p->hn_v0.reset(p->hn_state, sr);
+        p->hn_v1.reset(p->hn_state, sr);
+        p->hn_v2.reset(p->hn_state, sr);
+        p->hn_needs_analysis = false;
+    }
+    if (p->hn_state.valid) {
+        p->hn_v0.set_pitch_ratio(base_speed);
+        p->hn_v1.set_pitch_ratio(static_cast<float>(semi_to_ratio(p1_semi)));
+        p->hn_v2.set_pitch_ratio(static_cast<float>(semi_to_ratio(p2_semi)));
+    }
+#endif
+
 #ifdef MEGALO_PHASE_VOCODER
     const double lfo_now    = std::sin(2.0 * M_PI * p->lfo_phase);
     const float  pv1_detune = detune_en
@@ -237,6 +277,9 @@ static void run(LV2_Handle handle, uint32_t n_samples)
             p->gp2.reset();
 #endif
             p->envelope.trigger();
+#ifdef MEGALO_HN_SYNTH
+            p->hn_needs_analysis = true;
+#endif
         }
 
         // LFO
@@ -252,9 +295,32 @@ static void run(LV2_Handle handle, uint32_t n_samples)
         const float det_speed = base_speed *
             static_cast<float>(1.0 + (det_ratio - 1.0) * lfo);
 
+        // Base pitch: HN synth when valid, granular otherwise
+#ifdef MEGALO_HN_SYNTH
+        const float v0 = p->hn_state.valid
+            ? p->hn_v0.process()
+            : p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
+#else
         const float v0 = p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
+#endif
         const float vd = p->gp_d.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed);
-#ifdef MEGALO_PHASE_VOCODER
+
+        // Pitch voices: HN > PV > granular
+#if defined(MEGALO_HN_SYNTH)
+        float v1, v2;
+        if (p->hn_state.valid) {
+            v1 = p->hn_v1.process();
+            v2 = p->hn_v2.process();
+        } else {
+#   ifdef MEGALO_PHASE_VOCODER
+            v1 = (llen > 0) ? p->pv1.process(ldata, llen) : 0.0f;
+            v2 = (llen > 0) ? p->pv2.process(ldata, llen) : 0.0f;
+#   else
+            v1 = p->gp1.process(ldata, llen, grain_samples, grain_xfade_smp, v1_speed);
+            v2 = p->gp2.process(ldata, llen, grain_samples, grain_xfade_smp, v2_speed);
+#   endif
+        }
+#elif defined(MEGALO_PHASE_VOCODER)
         const float v1 = (llen > 0) ? p->pv1.process(ldata, llen) : 0.0f;
         const float v2 = (llen > 0) ? p->pv2.process(ldata, llen) : 0.0f;
 #else
