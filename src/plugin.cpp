@@ -15,17 +15,9 @@
 #include "phase_vocoder.hpp"
 #endif
 
-#ifdef MEGALO_HN_SYNTH
-#include "hn_analyzer.hpp"
-#include "additive_synth.hpp"
-#ifdef MEGALO_RAVE
-#include "rave_engine.hpp"
-#endif
-#endif
-
 static constexpr char MEGALO_URI[] = "https://github.com/pilali/megalo/hn";
 
-// ── Port indices ───────────────────────────────────────────────────────────
+// ── Port indices ──────────────────────────────────────────────────────────────────
 enum Port : uint32_t {
     P_AUDIO_IN       =  0,
     P_AUDIO_OUT      =  1,
@@ -64,7 +56,7 @@ static constexpr int XFADE_MS       = 20;
 static constexpr int RETRIGGER_MS   = 200;
 static constexpr int CAPTURE_FADE_MS = 10;
 
-// ── Plugin instance ────────────────────────────────────────────────────────
+// ── Plugin instance ───────────────────────────────────────────────────────────────
 struct Megalo {
     double sample_rate;
 
@@ -96,20 +88,9 @@ struct Megalo {
     float cached_ftype  = -1.0f;
     float cached_cutoff = -1.0f;
     float cached_q      = -1.0f;
-
-#ifdef MEGALO_HN_SYNTH
-    HNState       hn_state          = {};
-    AdditiveSynth hn_v0;   // base pitch
-    AdditiveSynth hn_v1;   // pitch voice 1
-    AdditiveSynth hn_v2;   // pitch voice 2
-    bool          hn_needs_analysis = false;
-#ifdef MEGALO_RAVE
-    RaveEngine    rave;
-#endif
-#endif
 };
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────────────
 static inline float ctl(const Megalo* p, Port port) noexcept {
     const float* ptr = p->ctl[port - 2];
     return ptr ? *ptr : 0.0f;
@@ -123,7 +104,7 @@ static inline float soft_clip(float x) noexcept {
     return x / (1.0f + std::abs(x));
 }
 
-// ── LV2 callbacks ──────────────────────────────────────────────────────────
+// ── LV2 callbacks ───────────────────────────────────────────────────────────────────
 static LV2_Handle instantiate(const LV2_Descriptor*,
                                double rate,
                                const char*,
@@ -171,11 +152,9 @@ static void activate(LV2_Handle handle)
     p->cached_ftype = p->cached_cutoff = p->cached_q = -1.0f;
     p->sf.reset();
     p->sf_d.reset();
+    p->sf.seed(0xA5A5A5A5u);
+    p->sf_d.seed(0x5A5A5A5Au);
     p->sf_needs_init = false;
-#ifdef MEGALO_HN_SYNTH
-    p->hn_state          = {};
-    p->hn_needs_analysis = false;
-#endif
 }
 
 static void run(LV2_Handle handle, uint32_t n_samples)
@@ -186,7 +165,7 @@ static void run(LV2_Handle handle, uint32_t n_samples)
     float*      out = p->audio_out;
     const float  sr = static_cast<float>(p->sample_rate);
 
-    // ── Snapshot controls (block boundary) ────────────────────────────────
+    // ── Snapshot controls (block boundary) ──────────────────────────────────
     const float threshold     = std::clamp(ctl(p, P_THRESHOLD),     0.0f,   1.0f);
     const int   sample_ms     = std::clamp(static_cast<int>(ctl(p, P_SAMPLE_MS)), 50, 500);
     const int   attack_skip   = std::clamp(static_cast<int>(ctl(p, P_ATTACK_SKIP)), 0, 500);
@@ -216,7 +195,7 @@ static void run(LV2_Handle handle, uint32_t n_samples)
     const bool  pitch2_en     = ctl(p, P_PITCH2_EN) >= 0.5f;
     const bool  freeze_mode   = ctl(p, P_FREEZE_MODE) >= 0.5f;
 
-    // ── Filter ────────────────────────────────────────────────────────────
+    // ── Filter ───────────────────────────────────────────────────────────────────
     if (filt_type != p->cached_ftype || filt_cutoff != p->cached_cutoff || filt_q != p->cached_q) {
         Biquad::Type btype = (filt_type < 0.5f) ? Biquad::LP
                            : (filt_type < 1.5f) ? Biquad::HP
@@ -240,23 +219,6 @@ static void run(LV2_Handle handle, uint32_t n_samples)
         p->sf_needs_init = false;
     }
 
-#ifdef MEGALO_HN_SYNTH
-    if (p->hn_needs_analysis) {
-        const float* ldata_ana = p->freeze.loop_data();
-        const int    llen_ana  = p->freeze.loop_len();
-        p->hn_state = hn_analyze(ldata_ana, llen_ana, sr);
-        p->hn_v0.reset(p->hn_state, sr);
-        p->hn_v1.reset(p->hn_state, sr);
-        p->hn_v2.reset(p->hn_state, sr);
-        p->hn_needs_analysis = false;
-    }
-    if (p->hn_state.valid) {
-        p->hn_v0.set_pitch_ratio(base_speed);
-        p->hn_v1.set_pitch_ratio(static_cast<float>(semi_to_ratio(p1_semi)));
-        p->hn_v2.set_pitch_ratio(static_cast<float>(semi_to_ratio(p2_semi)));
-    }
-#endif
-
 #ifdef MEGALO_PHASE_VOCODER
     const double lfo_now    = std::sin(2.0 * M_PI * p->lfo_phase);
     const float  pv1_detune = detune_en
@@ -273,7 +235,7 @@ static void run(LV2_Handle handle, uint32_t n_samples)
     const float v2_speed = static_cast<float>(semi_to_ratio(p2_semi));
 #endif
 
-    // ── Sample loop ────────────────────────────────────────────────────────
+    // ── Sample loop ─────────────────────────────────────────────────────────────────
     for (uint32_t i = 0; i < n_samples; ++i) {
         const float x = in[i];
 
@@ -294,9 +256,6 @@ static void run(LV2_Handle handle, uint32_t n_samples)
 #endif
             p->envelope.trigger();
             p->sf_needs_init = true;
-#ifdef MEGALO_HN_SYNTH
-            p->hn_needs_analysis = true;
-#endif
         }
 
         // LFO
@@ -312,41 +271,19 @@ static void run(LV2_Handle handle, uint32_t n_samples)
         const float det_speed = base_speed *
             static_cast<float>(1.0 + (det_ratio - 1.0) * lfo);
 
-        // Base voice: spectral > HN > granular
+        // Base + detuned voice: spectral if Spectral toggle on, otherwise granular
         const bool use_sf = freeze_mode && p->sf.valid;
         if (use_sf) {
             p->sf.set_pitch_ratio(base_speed);
             p->sf_d.set_pitch_ratio(det_speed);
         }
-#ifdef MEGALO_HN_SYNTH
-        const float v0 = use_sf ? p->sf.process()
-            : (p->hn_state.valid ? p->hn_v0.process()
-            : p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed));
-        const float vd = use_sf ? p->sf_d.process()
-            : p->gp_d.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed);
-#else
         const float v0 = use_sf ? p->sf.process()
             : p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
         const float vd = use_sf ? p->sf_d.process()
             : p->gp_d.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed);
-#endif
 
-        // Pitch voices: HN > PV > granular
-#if defined(MEGALO_HN_SYNTH)
-        float v1, v2;
-        if (p->hn_state.valid) {
-            v1 = p->hn_v1.process();
-            v2 = p->hn_v2.process();
-        } else {
-#   ifdef MEGALO_PHASE_VOCODER
-            v1 = (llen > 0) ? p->pv1.process(ldata, llen) : 0.0f;
-            v2 = (llen > 0) ? p->pv2.process(ldata, llen) : 0.0f;
-#   else
-            v1 = p->gp1.process(ldata, llen, grain_samples, grain_xfade_smp, v1_speed);
-            v2 = p->gp2.process(ldata, llen, grain_samples, grain_xfade_smp, v2_speed);
-#   endif
-        }
-#elif defined(MEGALO_PHASE_VOCODER)
+        // Pitch voices: PV (rpi5) or granular (moddwarf-new)
+#ifdef MEGALO_PHASE_VOCODER
         const float v1 = (llen > 0) ? p->pv1.process(ldata, llen) : 0.0f;
         const float v2 = (llen > 0) ? p->pv2.process(ldata, llen) : 0.0f;
 #else

@@ -13,11 +13,6 @@ option(MEGALO_PHASE_VOCODER
 set(MEGALO_PV_N "2048" CACHE STRING
     "Phase vocoder FFT size — must be a power of 2 (1024 for MOD Dwarf, 2048 for Pi 5)")
 
-option(MEGALO_HN_SYNTH
-    "Enable harmonic+noise additive synthesis (replaces granular/PV on pitched sources)" ON)
-option(MEGALO_RAVE
-    "Enable RAVE neural synthesis decoder stub (RPi 5 only — requires trained model + ONNX RT)" OFF)
-
 set(BUNDLE_DIR "${CMAKE_BINARY_DIR}/megaloHN.lv2")
 
 add_library(megaloHN MODULE src/plugin.cpp src/glibc_compat.cpp)
@@ -40,15 +35,6 @@ if(MEGALO_PHASE_VOCODER)
     message(STATUS "Phase vocoder enabled — FFT size: ${MEGALO_PV_N}")
 else()
     message(STATUS "Phase vocoder disabled — using variable-speed reader")
-endif()
-
-if(MEGALO_HN_SYNTH)
-    target_compile_definitions(megaloHN PRIVATE MEGALO_HN_SYNTH)
-    message(STATUS "H+N additive synthesis enabled")
-    if(MEGALO_RAVE)
-        target_compile_definitions(megaloHN PRIVATE MEGALO_RAVE)
-        message(STATUS "RAVE stub enabled (RPi 5 — model + ONNX RT required)")
-    endif()
 endif()
 
 set_target_properties(megaloHN PROPERTIES
