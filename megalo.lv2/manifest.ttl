@@ -33,3 +33,4 @@
     rdfs:seeAlso <Grainy.ttl> .
 
 
+<https://github.com/pilali/megalo> rdfs:seeAlso <modgui.ttl> .
