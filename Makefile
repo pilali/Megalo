@@ -49,8 +49,12 @@ $(BINARY): $(SOURCES) $(HEADERS)
 clean:
 	rm -f $(BINARY)
 
+# Recursive copy installs everything inside the bundle: the .so binary,
+# the manifest + plugin TTLs, the preset TTLs (Choir / Fast / Grainy …),
+# and the entire modgui/ directory (icon HTML, stylesheet, script, and
+# screenshot/thumbnail PNGs when present).
 install: $(BINARY)
-	install -d $(DESTDIR)/usr/lib/lv2/$(BUNDLE)
-	cp $(BUNDLE)/*.so $(BUNDLE)/*.ttl $(DESTDIR)/usr/lib/lv2/$(BUNDLE)/
+	install -d $(DESTDIR)/usr/lib/lv2
+	cp -r $(BUNDLE) $(DESTDIR)/usr/lib/lv2/
 
 .PHONY: all clean install

@@ -282,4 +282,16 @@
         lv2:default 0 ;
         lv2:minimum 0 ;
         lv2:maximum 1 ;
+    ] ,
+
+    # ── Output monitoring ───────────────────────────────────────────────
+    [
+        a lv2:OutputPort, lv2:ControlPort ;
+        lv2:index 26 ;
+        lv2:symbol "trigger_pulse" ;
+        lv2:name "Onset Trigger" ;
+        lv2:portProperty pprops:notOnGUI ;
+        lv2:default 0.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ;
     ] .
