@@ -45,7 +45,7 @@ public:
         std::memset(_syn_mag,   0, sizeof _syn_mag);
         std::memset(_syn_freq,  0, sizeof _syn_freq);
         std::memset(_out_buf,   0, sizeof _out_buf);
-        std::memset(_cx,        0, sizeof _cx);
+        for (auto& c : _cx) c = {};
         _read_pos  = 0.0;
         _hop_cnt   = 0;
         _out_write = 0;

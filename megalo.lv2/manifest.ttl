@@ -1,7 +1,36 @@
 @prefix lv2:  <http://lv2plug.in/ns/lv2core#> .
+@prefix pset: <http://lv2plug.in/ns/ext/presets#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
 <https://github.com/pilali/megalo>
     a lv2:Plugin ;
     lv2:binary <megalo.so> ;
     rdfs:seeAlso <megalo.ttl> .
+    
+<Choir.ttl>
+    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    a pset:Preset ;
+    rdfs:seeAlso <Choir.ttl> .
+
+<Fast.ttl>
+    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    a pset:Preset ;
+    rdfs:seeAlso <Fast.ttl> .
+
+<Good.ttl>
+    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    a pset:Preset ;
+    rdfs:seeAlso <Good.ttl> .
+
+<Good_2.ttl>
+    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    a pset:Preset ;
+    rdfs:seeAlso <Good_2.ttl> .
+
+<Grainy.ttl>
+    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    a pset:Preset ;
+    rdfs:seeAlso <Grainy.ttl> .
+
+
+<https://github.com/pilali/megalo> rdfs:seeAlso <modgui.ttl> .
