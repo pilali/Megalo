@@ -125,6 +125,13 @@ static void run(LV2_Handle handle, uint32_t n_samples)
         ctl(p, P_DETUNE_EN),
         ctl(p, P_PITCH1_EN),
         ctl(p, P_PITCH2_EN),
+        // pitch_mode: fixed per build (no LV2 port). Matches the legacy
+        // behaviour — phase vocoder only on builds that compiled it in.
+#ifdef MEGALO_PHASE_VOCODER
+        1.0f,
+#else
+        0.0f,
+#endif
     };
 
     megalo_dsp_process(p->dsp, &params, p->audio_in, p->audio_out, n_samples);

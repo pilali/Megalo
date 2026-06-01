@@ -25,9 +25,11 @@ else()
     FetchContent_MakeAvailable(JUCE)
 endif()
 
-# Phase-vocoder pitch shifter (matches the LV2 build option). Default ON here
-# for best quality on desktop; the FFT size is fixed at 2048 like the Pi 5 build.
-option(MEGALO_PHASE_VOCODER "Enable phase vocoder pitch shifter" ON)
+# Phase-vocoder pitch shifter. Kept ON so BOTH pitch engines are compiled into
+# the plugin and the "Pitch Engine" parameter selects between them at runtime
+# (granular by default — matches the LV2 MOD/native sound). FFT size 2048 like
+# the Pi 5 build. (Turning this OFF builds a granular-only, lower-memory binary.)
+option(MEGALO_PHASE_VOCODER "Compile in phase vocoder pitch engine" ON)
 set(MEGALO_PV_N "2048" CACHE STRING "Phase vocoder FFT size (power of 2)")
 
 juce_add_plugin(Megalo

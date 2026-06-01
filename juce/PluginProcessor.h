@@ -74,6 +74,7 @@ private:
     std::atomic<float>* pDetuneEn    = nullptr;
     std::atomic<float>* pPitch1En    = nullptr;
     std::atomic<float>* pPitch2En    = nullptr;
+    std::atomic<float>* pPitchMode   = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MegaloAudioProcessor)
 };

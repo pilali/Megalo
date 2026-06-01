@@ -157,6 +157,48 @@ void FilterTypeSwitch::mouseDown(const juce::MouseEvent& e)
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// PitchEngineSwitch — 2-position GRAIN / PV selector.
+// ════════════════════════════════════════════════════════════════════════════
+PitchEngineSwitch::PitchEngineSwitch(APVTS& apvts, const juce::String& paramID)
+{
+    if (auto* p = apvts.getParameter(paramID)) {
+        attachment = std::make_unique<juce::ParameterAttachment>(
+            *p, [this](float v) { index = juce::jlimit(0, 1, juce::roundToInt(v)); repaint(); });
+        attachment->sendInitialUpdate();
+    }
+}
+
+void PitchEngineSwitch::paint(juce::Graphics& g)
+{
+    auto b = getLocalBounds();
+    g.setColour(megalo::kSwitchBg);
+    g.fillRoundedRectangle(b.toFloat(), 4.0f);
+    g.setColour(megalo::kWhite.withAlpha(0.08f));
+    g.drawRoundedRectangle(b.toFloat().reduced(0.5f), 4.0f, 1.0f);
+
+    const char* lbl[2] = { "GRAIN", "PV" };
+    const int segW = b.getWidth() / 2;
+    for (int i = 0; i < 2; ++i) {
+        segs[i] = juce::Rectangle<int>(b.getX() + i * segW, b.getY(),
+                                       (i == 1 ? b.getWidth() - segW : segW), b.getHeight());
+        if (i == index) {
+            g.setColour(megalo::kOrange);
+            g.fillRoundedRectangle(segs[i].toFloat().reduced(1.0f), 3.0f);
+        }
+        g.setColour(i == index ? megalo::kPanel : megalo::kWhite.withAlpha(0.5f));
+        g.setFont(megalo::font(9.0f, true));
+        g.drawText(lbl[i], segs[i], juce::Justification::centred, false);
+    }
+}
+
+void PitchEngineSwitch::mouseDown(const juce::MouseEvent& e)
+{
+    for (int i = 0; i < 2; ++i)
+        if (segs[i].contains(e.getPosition()) && attachment)
+            attachment->setValueAsCompleteGesture((float) i);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // TimeHandle — horizontal time marker (top row of the window).
 // ════════════════════════════════════════════════════════════════════════════
 TimeHandle::TimeHandle(APVTS& apvts, const juce::String& paramID,
@@ -421,7 +463,8 @@ void WindowPanel::paint(juce::Graphics& g)
 // ════════════════════════════════════════════════════════════════════════════
 MegaloEditor::MegaloEditor(MegaloAudioProcessor& p)
     : juce::AudioProcessorEditor(p), proc(p), window(p.apvts),
-      filterType(p.apvts, "filter_type")
+      filterType(p.apvts, "filter_type"),
+      pitchEngine(p.apvts, "pitch_mode")
 {
     addAndMakeVisible(window);
 
@@ -448,6 +491,7 @@ MegaloEditor::MegaloEditor(MegaloAudioProcessor& p)
     for (auto* l : leds) addAndMakeVisible(l);
 
     addAndMakeVisible(filterType);
+    addAndMakeVisible(pitchEngine);
 
     setSize(720, 380);
     startTimerHz(30);
@@ -481,6 +525,12 @@ void MegaloEditor::paint(juce::Graphics& g)
     g.setFont(megalo::font(30.0f, true));
     g.drawText("M E G A L O", juce::Rectangle<int>(26, 12, 360, 36),
                juce::Justification::left, false);
+
+    // Pitch-engine switch caption (top-right, above the switch).
+    g.setColour(megalo::kWhite.withAlpha(0.55f));
+    g.setFont(megalo::font(8.0f, true));
+    g.drawText("PITCH ENGINE", juce::Rectangle<int>(560, 12, 134, 10),
+               juce::Justification::centred, false);
 
     // Time-axis ruler above the window (0..500 ms).
     const int rulerX = 26, rulerY = 52, rulerW = 668;
@@ -520,6 +570,9 @@ void MegaloEditor::paint(juce::Graphics& g)
 
 void MegaloEditor::resized()
 {
+    // Pitch-engine switch, top-right (under its caption, above the window).
+    pitchEngine.setBounds(560, 24, 134, 22);
+
     window.setBounds(26, 60, 668, 170);
 
     // LEDs sit at the top-right of VOICE 1 / VOICE 2 / DETUNE heads.

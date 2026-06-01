@@ -49,6 +49,10 @@ APVTS::ParameterLayout MegaloAudioProcessor::createLayout()
     p.add(std::make_unique<AB>(pid("detune_enable"), "Detune Enable", false));
     p.add(std::make_unique<AB>(pid("pitch1_enable"), "Voice 1 Enable", true));
     p.add(std::make_unique<AB>(pid("pitch2_enable"), "Voice 2 Enable", false));
+    // Pitch engine — runtime choice between the granular reader (default,
+    // matches the LV2 MOD/native sound) and the phase vocoder.
+    p.add(std::make_unique<AC>(pid("pitch_mode"), "Pitch Engine",
+                               juce::StringArray { "Granular", "Phase Vocoder" }, 0));
 
     return p;
 }
@@ -84,6 +88,7 @@ MegaloAudioProcessor::MegaloAudioProcessor()
     pDetuneEn    = raw("detune_enable");
     pPitch1En    = raw("pitch1_enable");
     pPitch2En    = raw("pitch2_enable");
+    pPitchMode   = raw("pitch_mode");
 }
 
 MegaloAudioProcessor::~MegaloAudioProcessor()
@@ -125,7 +130,8 @@ void MegaloAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         pDetuneCt->load(), pChorusRate->load(), pDetuneBlend->load(),
         pFiltType->load(), pFiltCutoff->load(), pFiltQ->load(),
         pEnvAtk->load(), pEnvDcy->load(), pEnvSus->load(), pEnvRel->load(),
-        pDetuneEn->load(), pPitch1En->load(), pPitch2En->load()
+        pDetuneEn->load(), pPitch1En->load(), pPitch2En->load(),
+        pPitchMode->load()
     };
 
     // Mono engine (guitar): sum the input to mono, process once, fan out.

@@ -36,6 +36,9 @@ typedef struct {
     float detune_enable;     /* idx 23 toggled (>=0.5)    */
     float pitch1_enable;     /* idx 24 toggled (>=0.5)    */
     float pitch2_enable;     /* idx 25 toggled (>=0.5)    */
+    float pitch_mode;        /* pitch engine: <0.5 = granular, >=0.5 = phase   */
+                             /* vocoder. Only honoured when the core is built  */
+                             /* with MEGALO_PHASE_VOCODER (else always granular).*/
 } MegaloParams;
 
 typedef struct MegaloDsp MegaloDsp;          /* opaque state */

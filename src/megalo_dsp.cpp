@@ -39,14 +39,13 @@ struct MegaloDsp {
     FreezeEngine freeze;
     GrainPlayer  gp0;   // base pitch (always granular)
     GrainPlayer  gp_d;  // detuned copy (always granular)
+    GrainPlayer  gp1;   // pitch voice 1 — granular engine
+    GrainPlayer  gp2;   // pitch voice 2 — granular engine
 #ifdef MEGALO_PHASE_VOCODER
-    PhaseVocoder pv1;
-    PhaseVocoder pv2;
+    PhaseVocoder pv1;   // pitch voice 1 — phase-vocoder engine (runtime-selectable)
+    PhaseVocoder pv2;   // pitch voice 2 — phase-vocoder engine
     float        pv1_last_semi = 1e9f;
     float        pv2_last_semi = 1e9f;
-#else
-    GrainPlayer  gp1;   // pitch voice 1
-    GrainPlayer  gp2;   // pitch voice 2
 #endif
     Biquad       filter;
     Envelope     envelope;
@@ -99,13 +98,12 @@ void megalo_dsp_reset(MegaloDsp* p)
     p->freeze.reset();
     p->gp0.reset();
     p->gp_d.reset();
+    p->gp1.reset();
+    p->gp2.reset();
 #ifdef MEGALO_PHASE_VOCODER
     p->pv1.reset();
     p->pv2.reset();
     p->pv1_last_semi = p->pv2_last_semi = 1e9f;
-#else
-    p->gp1.reset();
-    p->gp2.reset();
 #endif
     p->filter.reset();
     p->envelope.reset();
@@ -149,6 +147,13 @@ void megalo_dsp_process(MegaloDsp* p, const MegaloParams* p_,
     const bool  detune_en     = p_->detune_enable >= 0.5f;
     const bool  pitch1_en     = p_->pitch1_enable >= 0.5f;
     const bool  pitch2_en     = p_->pitch2_enable >= 0.5f;
+    // Pitch engine select. The phase vocoder only exists when compiled in;
+    // otherwise the granular reader is always used (memory-lean targets).
+#ifdef MEGALO_PHASE_VOCODER
+    const bool  use_pv        = p_->pitch_mode >= 0.5f;
+#else
+    [[maybe_unused]] const bool use_pv = false;
+#endif
 
     // ── Filter ────────────────────────────────────────────────────────────
     if (filt_type != p->cached_ftype || filt_cutoff != p->cached_cutoff || filt_q != p->cached_q) {
@@ -168,20 +173,22 @@ void megalo_dsp_process(MegaloDsp* p, const MegaloParams* p_,
     // Precompute the max ratio; the per-sample LFO modulates within [-1,+1].
     const double det_ratio = std::pow(2.0, static_cast<double>(detune_ct) / 1200.0);
 
-#ifdef MEGALO_PHASE_VOCODER
-    const double lfo_now    = std::sin(2.0 * M_PI * p->lfo_phase);
-    const float  pv1_detune = detune_en
-                              ? static_cast<float>(detune_ct * lfo_now / 100.0)
-                              : 0.0f;
-    const float  pv1_semi_mod = p1_semi + pv1_detune;
-    if (pv1_semi_mod != p->pv1_last_semi) {
-        p->pv1.set_pitch(pv1_semi_mod);
-        p->pv1_last_semi = pv1_semi_mod;
-    }
-    if (p2_semi != p->pv2_last_semi) { p->pv2.set_pitch(p2_semi); p->pv2_last_semi = p2_semi; }
-#else
+    // Granular pitch playback ratios (always available).
     const float v1_speed = static_cast<float>(semi_to_ratio(p1_semi));
     const float v2_speed = static_cast<float>(semi_to_ratio(p2_semi));
+#ifdef MEGALO_PHASE_VOCODER
+    if (use_pv) {
+        const double lfo_now    = std::sin(2.0 * M_PI * p->lfo_phase);
+        const float  pv1_detune = detune_en
+                                  ? static_cast<float>(detune_ct * lfo_now / 100.0)
+                                  : 0.0f;
+        const float  pv1_semi_mod = p1_semi + pv1_detune;
+        if (pv1_semi_mod != p->pv1_last_semi) {
+            p->pv1.set_pitch(pv1_semi_mod);
+            p->pv1_last_semi = pv1_semi_mod;
+        }
+        if (p2_semi != p->pv2_last_semi) { p->pv2.set_pitch(p2_semi); p->pv2_last_semi = p2_semi; }
+    }
 #endif
 
     // ── Sample loop ────────────────────────────────────────────────────────
@@ -198,12 +205,11 @@ void megalo_dsp_process(MegaloDsp* p, const MegaloParams* p_,
         } else if (evt == FreezeEvent::LoopReady) {
             p->gp0.reset();
             p->gp_d.reset();
+            p->gp1.reset();
+            p->gp2.reset();
 #ifdef MEGALO_PHASE_VOCODER
             p->pv1.reset();
             p->pv2.reset();
-#else
-            p->gp1.reset();
-            p->gp2.reset();
 #endif
             p->envelope.trigger();
         }
@@ -223,13 +229,17 @@ void megalo_dsp_process(MegaloDsp* p, const MegaloParams* p_,
 
         const float v0 = p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
         const float vd = p->gp_d.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed);
+        float v1, v2;
 #ifdef MEGALO_PHASE_VOCODER
-        const float v1 = (llen > 0) ? p->pv1.process(ldata, llen) : 0.0f;
-        const float v2 = (llen > 0) ? p->pv2.process(ldata, llen) : 0.0f;
-#else
-        const float v1 = p->gp1.process(ldata, llen, grain_samples, grain_xfade_smp, v1_speed);
-        const float v2 = p->gp2.process(ldata, llen, grain_samples, grain_xfade_smp, v2_speed);
+        if (use_pv) {
+            v1 = (llen > 0) ? p->pv1.process(ldata, llen) : 0.0f;
+            v2 = (llen > 0) ? p->pv2.process(ldata, llen) : 0.0f;
+        } else
 #endif
+        {
+            v1 = p->gp1.process(ldata, llen, grain_samples, grain_xfade_smp, v1_speed);
+            v2 = p->gp2.process(ldata, llen, grain_samples, grain_xfade_smp, v2_speed);
+        }
 
         // Mix: detune_blend fades between dry base and detuned base
         const float base_sig = detune_en

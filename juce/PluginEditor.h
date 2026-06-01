@@ -69,6 +69,20 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FilterTypeSwitch)
 };
 
+// ── 2-position Granular / Phase-Vocoder pitch-engine switch ──────────────────
+class PitchEngineSwitch : public juce::Component
+{
+public:
+    PitchEngineSwitch(juce::AudioProcessorValueTreeState&, const juce::String& paramID);
+    void paint(juce::Graphics&) override;
+    void mouseDown(const juce::MouseEvent&) override;
+private:
+    int index = 0;
+    std::unique_ptr<juce::ParameterAttachment> attachment;
+    juce::Rectangle<int> segs[2];
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PitchEngineSwitch)
+};
+
 // ── Top time-marker handle: vertical line that slides horizontally ───────────
 class TimeHandle : public juce::Component
 {
@@ -168,6 +182,7 @@ private:
     juce::OwnedArray<KnobControl> knobs;
     juce::OwnedArray<LedToggle>   leds;
     FilterTypeSwitch filterType;
+    PitchEngineSwitch pitchEngine;
 
     float flashLevel = 0.0f;
 
