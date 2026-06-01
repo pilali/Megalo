@@ -1,18 +1,15 @@
+// Thin LV2 wrapper around the host-agnostic DSP core (megalo_dsp.{h,cpp}).
+//
+// All processing lives in megalo_dsp.cpp. This file only:
+//   - declares the LV2 port indices,
+//   - holds port pointers + a MegaloDsp* instance,
+//   - maps the connected control ports into a MegaloParams on each run().
 #include <lv2/core/lv2.h>
 #include <array>
-#include <cmath>
-#include <cstdlib>
-#include <algorithm>
+#include <cstdint>
 #include <new>
 
-#include "freeze_engine.hpp"
-#include "granular_looper.hpp"
-#include "biquad.hpp"
-#include "envelope.hpp"
-
-#ifdef MEGALO_PHASE_VOCODER
-#include "phase_vocoder.hpp"
-#endif
+#include "megalo_dsp.h"
 
 static constexpr char MEGALO_URI[] = "https://github.com/pilali/megalo";
 
@@ -49,83 +46,40 @@ enum Port : uint32_t {
 };
 
 // Number of *input* control ports stored in the ctl[] array. P_TRIGGER_OUT
-// is an output, handled separately via Megalo::trigger_out.
+// is an output, handled separately via trigger_out.
 static constexpr uint32_t N_CTL = P_TRIGGER_OUT - 2;
 
-// Internal constants (not exposed as ports)
-static constexpr int XFADE_MS       = 20;
-static constexpr int RETRIGGER_MS   = 200;
-static constexpr int CAPTURE_FADE_MS = 10;
-
 // ── Plugin instance ────────────────────────────────────────────────────────
-struct Megalo {
-    double sample_rate;
+struct MegaloLV2 {
+    MegaloDsp* dsp = nullptr;
 
     const float* audio_in  = nullptr;
     float*       audio_out = nullptr;
     std::array<const float*, N_CTL> ctl = {};
-
-    FreezeEngine freeze;
-    GrainPlayer  gp0;   // base pitch (always granular)
-    GrainPlayer  gp_d;  // detuned copy (always granular)
-#ifdef MEGALO_PHASE_VOCODER
-    PhaseVocoder pv1;
-    PhaseVocoder pv2;
-    float        pv1_last_semi = 1e9f;
-    float        pv2_last_semi = 1e9f;
-#else
-    GrainPlayer  gp1;   // pitch voice 1
-    GrainPlayer  gp2;   // pitch voice 2
-#endif
-    Biquad       filter;
-    Envelope     envelope;
-
-    double lfo_phase = 0.0;
-
-    float cached_ftype  = -1.0f;
-    float cached_cutoff = -1.0f;
-    float cached_q      = -1.0f;
-
-    // Onset pulse output (held high for a short window after each detected
-    // onset so the GUI poll catches the transition reliably).
-    float* trigger_out  = nullptr;
-    int    trigger_hold = 0;  // samples remaining in the held-high window
+    float*       trigger_out = nullptr;
 };
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-static inline float ctl(const Megalo* p, Port port) noexcept {
+static inline float ctl(const MegaloLV2* p, Port port) noexcept {
     const float* ptr = p->ctl[port - 2];
     return ptr ? *ptr : 0.0f;
 }
 
-static inline double semi_to_ratio(float semi) noexcept {
-    return std::pow(2.0, static_cast<double>(semi) / 12.0);
-}
-
-static inline float soft_clip(float x) noexcept {
-    return x / (1.0f + std::abs(x));
-}
-
 // ── LV2 callbacks ──────────────────────────────────────────────────────────
 static LV2_Handle instantiate(const LV2_Descriptor*,
-                               double rate,
-                               const char*,
-                               const LV2_Feature* const*)
+                              double rate,
+                              const char*,
+                              const LV2_Feature* const*)
 {
-    Megalo* p = new (std::nothrow) Megalo();
+    MegaloLV2* p = new (std::nothrow) MegaloLV2();
     if (!p) return nullptr;
-    p->sample_rate = rate;
-    p->freeze.init(rate);
-#ifdef MEGALO_PHASE_VOCODER
-    p->pv1.init(rate);
-    p->pv2.init(rate);
-#endif
+    p->dsp = megalo_dsp_new(rate);
+    if (!p->dsp) { delete p; return nullptr; }
     return p;
 }
 
 static void connect_port(LV2_Handle handle, uint32_t port, void* data)
 {
-    Megalo* p = static_cast<Megalo*>(handle);
+    MegaloLV2* p = static_cast<MegaloLV2*>(handle);
     if (port == P_AUDIO_IN)
         p->audio_in = static_cast<const float*>(data);
     else if (port == P_AUDIO_OUT)
@@ -138,171 +92,51 @@ static void connect_port(LV2_Handle handle, uint32_t port, void* data)
 
 static void activate(LV2_Handle handle)
 {
-    Megalo* p = static_cast<Megalo*>(handle);
-    p->freeze.reset();
-    p->gp0.reset();
-    p->gp_d.reset();
-#ifdef MEGALO_PHASE_VOCODER
-    p->pv1.reset();
-    p->pv2.reset();
-    p->pv1_last_semi = p->pv2_last_semi = 1e9f;
-#else
-    p->gp1.reset();
-    p->gp2.reset();
-#endif
-    p->filter.reset();
-    p->envelope.reset();
-    p->lfo_phase = 0.0;
-    p->cached_ftype = p->cached_cutoff = p->cached_q = -1.0f;
-    p->trigger_hold = 0;
+    MegaloLV2* p = static_cast<MegaloLV2*>(handle);
+    megalo_dsp_reset(p->dsp);
 }
 
 static void run(LV2_Handle handle, uint32_t n_samples)
 {
-    Megalo* p = static_cast<Megalo*>(handle);
+    MegaloLV2* p = static_cast<MegaloLV2*>(handle);
 
-    const float* in = p->audio_in;
-    float*      out = p->audio_out;
-    const float  sr = static_cast<float>(p->sample_rate);
+    const MegaloParams params {
+        ctl(p, P_THRESHOLD),
+        ctl(p, P_SAMPLE_MS),
+        ctl(p, P_ATTACK_SKIP),
+        ctl(p, P_BLEND),
+        ctl(p, P_GRAIN_MS),
+        ctl(p, P_GRAIN_XFADE_MS),
+        ctl(p, P_BASE_PITCH),
+        ctl(p, P_PITCH1_SEMI),
+        ctl(p, P_PITCH1_LVL),
+        ctl(p, P_PITCH2_SEMI),
+        ctl(p, P_PITCH2_LVL),
+        ctl(p, P_DETUNE_CT),
+        ctl(p, P_CHORUS_RATE),
+        ctl(p, P_DETUNE_BLEND),
+        ctl(p, P_FILT_TYPE),
+        ctl(p, P_FILT_CUTOFF),
+        ctl(p, P_FILT_Q),
+        ctl(p, P_ENV_ATK),
+        ctl(p, P_ENV_DCY),
+        ctl(p, P_ENV_SUS),
+        ctl(p, P_ENV_REL),
+        ctl(p, P_DETUNE_EN),
+        ctl(p, P_PITCH1_EN),
+        ctl(p, P_PITCH2_EN),
+    };
 
-    // ── Snapshot controls (block boundary) ────────────────────────────────
-    const float threshold     = std::clamp(ctl(p, P_THRESHOLD),     0.0f,   1.0f);
-    const int   sample_ms     = std::clamp(static_cast<int>(ctl(p, P_SAMPLE_MS)), 50, 500);
-    const int   attack_skip   = std::clamp(static_cast<int>(ctl(p, P_ATTACK_SKIP)), 0, 500);
-    const float blend         = std::clamp(ctl(p, P_BLEND),         0.0f,   1.0f);
-    const int   grain_ms      = std::clamp(static_cast<int>(ctl(p, P_GRAIN_MS)),       5, 200);
-    const int   grain_samples = std::clamp((int)(sr * grain_ms * 0.001f), 16, FREEZE_MAX_SAMPLES);
-    const int   grain_xfade_ms  = std::clamp(static_cast<int>(ctl(p, P_GRAIN_XFADE_MS)), 5, 100);
-    const int   grain_xfade_smp = std::clamp((int)(sr * grain_xfade_ms * 0.001f), 8, grain_samples / 2);
-    const float base_pitch    = std::clamp(ctl(p, P_BASE_PITCH),   -12.0f, 12.0f);
-    const float base_speed    = static_cast<float>(semi_to_ratio(base_pitch));
-    const float p1_semi       =            ctl(p, P_PITCH1_SEMI);
-    const float p1_lvl        = std::clamp(ctl(p, P_PITCH1_LVL),    0.0f,   1.0f);
-    const float p2_semi       =            ctl(p, P_PITCH2_SEMI);
-    const float p2_lvl        = std::clamp(ctl(p, P_PITCH2_LVL),    0.0f,   1.0f);
-    const float detune_ct     = std::clamp(ctl(p, P_DETUNE_CT),     0.0f,  50.0f);
-    const float chorus_rate   = std::clamp(ctl(p, P_CHORUS_RATE),   0.1f,   8.0f);
-    const float detune_blend  = std::clamp(ctl(p, P_DETUNE_BLEND),  0.0f,   1.0f);
-    const float filt_type     =            ctl(p, P_FILT_TYPE);
-    const float filt_cutoff   = std::clamp(ctl(p, P_FILT_CUTOFF),  20.0f, sr * 0.499f);
-    const float filt_q        = std::clamp(ctl(p, P_FILT_Q),        0.1f,  10.0f);
-    const float env_atk       = std::clamp(ctl(p, P_ENV_ATK),       0.0f,  5000.0f);
-    const float env_dcy       = std::clamp(ctl(p, P_ENV_DCY),       0.0f,  5000.0f);
-    const float env_sus       = std::clamp(ctl(p, P_ENV_SUS),       0.0f,   1.0f);
-    const float env_rel       = std::clamp(ctl(p, P_ENV_REL),       0.0f, 10000.0f);
-    const bool  detune_en     = ctl(p, P_DETUNE_EN) >= 0.5f;
-    const bool  pitch1_en     = ctl(p, P_PITCH1_EN) >= 0.5f;
-    const bool  pitch2_en     = ctl(p, P_PITCH2_EN) >= 0.5f;
+    megalo_dsp_process(p->dsp, &params, p->audio_in, p->audio_out, n_samples);
 
-    // ── Filter ────────────────────────────────────────────────────────────
-    if (filt_type != p->cached_ftype || filt_cutoff != p->cached_cutoff || filt_q != p->cached_q) {
-        Biquad::Type btype = (filt_type < 0.5f) ? Biquad::LP
-                           : (filt_type < 1.5f) ? Biquad::HP
-                           :                      Biquad::BP;
-        p->filter.setup(btype, filt_cutoff, filt_q, sr);
-        p->cached_ftype  = filt_type;
-        p->cached_cutoff = filt_cutoff;
-        p->cached_q      = filt_q;
-    }
-
-    p->envelope.set(env_atk, env_dcy, env_sus, env_rel, sr);
-
-    const double lfo_inc  = static_cast<double>(chorus_rate) / p->sample_rate;
-    // det_speed range per sample: base_speed * 2^(±detune_ct/1200).
-    // Precompute the max ratio; the per-sample LFO modulates within [-1,+1].
-    const double det_ratio = std::pow(2.0, static_cast<double>(detune_ct) / 1200.0);
-
-#ifdef MEGALO_PHASE_VOCODER
-    const double lfo_now    = std::sin(2.0 * M_PI * p->lfo_phase);
-    const float  pv1_detune = detune_en
-                              ? static_cast<float>(detune_ct * lfo_now / 100.0)
-                              : 0.0f;
-    const float  pv1_semi_mod = p1_semi + pv1_detune;
-    if (pv1_semi_mod != p->pv1_last_semi) {
-        p->pv1.set_pitch(pv1_semi_mod);
-        p->pv1_last_semi = pv1_semi_mod;
-    }
-    if (p2_semi != p->pv2_last_semi) { p->pv2.set_pitch(p2_semi); p->pv2_last_semi = p2_semi; }
-#else
-    const float v1_speed = static_cast<float>(semi_to_ratio(p1_semi));
-    const float v2_speed = static_cast<float>(semi_to_ratio(p2_semi));
-#endif
-
-    // ── Sample loop ────────────────────────────────────────────────────────
-    bool onset_this_block = false;
-    for (uint32_t i = 0; i < n_samples; ++i) {
-        const float x = in[i];
-
-        const FreezeEvent evt = p->freeze.process(x, threshold, sample_ms, attack_skip,
-                                                   XFADE_MS, RETRIGGER_MS, CAPTURE_FADE_MS);
-
-        if (evt == FreezeEvent::Onset) {
-            p->envelope.release();
-            onset_this_block = true;
-        } else if (evt == FreezeEvent::LoopReady) {
-            p->gp0.reset();
-            p->gp_d.reset();
-#ifdef MEGALO_PHASE_VOCODER
-            p->pv1.reset();
-            p->pv2.reset();
-#else
-            p->gp1.reset();
-            p->gp2.reset();
-#endif
-            p->envelope.trigger();
-        }
-
-        // LFO
-        const double lfo = std::sin(2.0 * M_PI * p->lfo_phase);
-        p->lfo_phase += lfo_inc;
-        if (p->lfo_phase >= 1.0) p->lfo_phase -= 1.0;
-
-        const float*   ldata = p->freeze.loop_data();
-        const int      llen  = p->freeze.loop_len();
-
-        // Detuned speed: linear interpolation of 2^(±detune_ct/1200) driven by LFO.
-        // Avoids per-sample std::pow; det_ratio = 2^(detune_ct/1200) precomputed above.
-        const float det_speed = base_speed *
-            static_cast<float>(1.0 + (det_ratio - 1.0) * lfo);
-
-        const float v0 = p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
-        const float vd = p->gp_d.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed);
-#ifdef MEGALO_PHASE_VOCODER
-        const float v1 = (llen > 0) ? p->pv1.process(ldata, llen) : 0.0f;
-        const float v2 = (llen > 0) ? p->pv2.process(ldata, llen) : 0.0f;
-#else
-        const float v1 = p->gp1.process(ldata, llen, grain_samples, grain_xfade_smp, v1_speed);
-        const float v2 = p->gp2.process(ldata, llen, grain_samples, grain_xfade_smp, v2_speed);
-#endif
-
-        // Mix: detune_blend fades between dry base and detuned base
-        const float base_sig = detune_en
-            ? v0 * (1.0f - detune_blend) + vd * detune_blend
-            : v0;
-        float freeze_sig = base_sig
-            + (pitch1_en ? v1 * p1_lvl : 0.0f)
-            + (pitch2_en ? v2 * p2_lvl : 0.0f);
-
-        freeze_sig  = p->filter.process(freeze_sig);
-        freeze_sig *= p->envelope.process();
-
-        out[i] = soft_clip(x * (1.0f - blend) + freeze_sig * blend);
-    }
-
-    // ── Trigger pulse output ───────────────────────────────────────────────
-    // Hold high for ~50 ms after each onset so MOD-UI's port polling (which
-    // runs at ~30 Hz) reliably catches the 0→1→0 sequence.
-    if (onset_this_block) {
-        p->trigger_hold = static_cast<int>(0.050 * p->sample_rate);
-    }
-    p->trigger_hold -= static_cast<int>(n_samples);
-    if (p->trigger_hold < 0) p->trigger_hold = 0;
-    if (p->trigger_out) *p->trigger_out = p->trigger_hold > 0 ? 1.0f : 0.0f;
+    if (p->trigger_out) *p->trigger_out = megalo_dsp_trigger(p->dsp);
 }
 
 static void cleanup(LV2_Handle handle)
 {
-    delete static_cast<Megalo*>(handle);
+    MegaloLV2* p = static_cast<MegaloLV2*>(handle);
+    megalo_dsp_free(p->dsp);
+    delete p;
 }
 
 static const LV2_Descriptor descriptor = {
