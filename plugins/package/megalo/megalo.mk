@@ -4,7 +4,7 @@
 # To update: set MEGALO_VERSION to the desired commit hash, then rebuild.
 ################################################################################
 
-MEGALO_VERSION = 12d107f0196e127cc3da096ab3d1f4f24a0b2463
+MEGALO_VERSION = 7be87f409f7d29ec6adbe68dde814c9133530eb7
 MEGALO_SITE    = $(call github,pilali,megalo,$(MEGALO_VERSION))
 MEGALO_BUNDLES = megalo.lv2
 
