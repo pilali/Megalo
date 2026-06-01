@@ -135,8 +135,11 @@ private:
         _fft(true);
 
         // ── Overlap-add ───────────────────────────────────────────────────
-        // Scale: 2 / (N/2 × osamp) — Hann analysis+synthesis, 4× overlap
-        const float scale = 2.0f / (static_cast<float>(N / 2) * _osamp);
+        // Hann analysis+synthesis normalization: the sum of w² over the
+        // overlapping frames is 0.375 × osamp (= 1.5 at 4× / 75 % overlap),
+        // so dividing by it yields unity passthrough. (The previous factor was
+        // wrong by ~N/2, making the pitch voices ~1340× too quiet / inaudible.)
+        const float scale = 1.0f / (0.375f * _osamp);
         for (int i = 0; i < N; i++) {
             int idx = (_out_write + i) % OUTBUF;
             _out_buf[idx] += _cx[i].real() * _win[i] * scale;

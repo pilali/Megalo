@@ -15,7 +15,7 @@ set(MEGALO_PV_N "2048" CACHE STRING
 
 set(BUNDLE_DIR "${CMAKE_BINARY_DIR}/megalo.lv2")
 
-add_library(megalo MODULE src/plugin.cpp)
+add_library(megalo MODULE src/plugin.cpp src/megalo_dsp.cpp)
 
 target_include_directories(megalo PRIVATE ${LV2_INCLUDE_DIRS} src)
 
