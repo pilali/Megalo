@@ -56,7 +56,10 @@ endif()
 
 target_compile_definitions(Megalo PUBLIC
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0
-    JUCE_VST3_CAN_REPLACE_VST2=0 JUCE_DISPLAY_SPLASH_SCREEN=0)
+    JUCE_VST3_CAN_REPLACE_VST2=0 JUCE_DISPLAY_SPLASH_SCREEN=0
+    # MSVC doesn't expose M_PI / M_1_PI (used in the DSP core) unless this is
+    # defined before <cmath>. No-op on gcc/clang, which already provide them.
+    _USE_MATH_DEFINES)
 
 target_link_libraries(Megalo
     PRIVATE juce::juce_audio_utils
