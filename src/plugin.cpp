@@ -44,10 +44,13 @@ enum Port : uint32_t {
     P_DETUNE_EN      = 23,   // detune on/off        [0, 1]
     P_PITCH1_EN      = 24,   // voice-1 on/off       [0, 1]
     P_PITCH2_EN      = 25,   // voice-2 on/off       [0, 1]
-    P_COUNT          = 26
+    P_TRIGGER_OUT    = 26,   // momentary onset pulse [0, 1] — output for GUI flash
+    P_COUNT          = 27
 };
 
-static constexpr uint32_t N_CTL = P_COUNT - 2;
+// Number of *input* control ports stored in the ctl[] array. P_TRIGGER_OUT
+// is an output, handled separately via Megalo::trigger_out.
+static constexpr uint32_t N_CTL = P_TRIGGER_OUT - 2;
 
 // Internal constants (not exposed as ports)
 static constexpr int XFADE_MS       = 20;
@@ -82,6 +85,11 @@ struct Megalo {
     float cached_ftype  = -1.0f;
     float cached_cutoff = -1.0f;
     float cached_q      = -1.0f;
+
+    // Onset pulse output (held high for a short window after each detected
+    // onset so the GUI poll catches the transition reliably).
+    float* trigger_out  = nullptr;
+    int    trigger_hold = 0;  // samples remaining in the held-high window
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -122,7 +130,9 @@ static void connect_port(LV2_Handle handle, uint32_t port, void* data)
         p->audio_in = static_cast<const float*>(data);
     else if (port == P_AUDIO_OUT)
         p->audio_out = static_cast<float*>(data);
-    else if (port >= 2 && port < P_COUNT)
+    else if (port == P_TRIGGER_OUT)
+        p->trigger_out = static_cast<float*>(data);
+    else if (port >= 2 && port < P_TRIGGER_OUT)
         p->ctl[port - 2] = static_cast<const float*>(data);
 }
 
@@ -144,6 +154,7 @@ static void activate(LV2_Handle handle)
     p->envelope.reset();
     p->lfo_phase = 0.0;
     p->cached_ftype = p->cached_cutoff = p->cached_q = -1.0f;
+    p->trigger_hold = 0;
 }
 
 static void run(LV2_Handle handle, uint32_t n_samples)
@@ -218,6 +229,7 @@ static void run(LV2_Handle handle, uint32_t n_samples)
 #endif
 
     // ── Sample loop ────────────────────────────────────────────────────────
+    bool onset_this_block = false;
     for (uint32_t i = 0; i < n_samples; ++i) {
         const float x = in[i];
 
@@ -226,6 +238,7 @@ static void run(LV2_Handle handle, uint32_t n_samples)
 
         if (evt == FreezeEvent::Onset) {
             p->envelope.release();
+            onset_this_block = true;
         } else if (evt == FreezeEvent::LoopReady) {
             p->gp0.reset();
             p->gp_d.reset();
@@ -275,6 +288,16 @@ static void run(LV2_Handle handle, uint32_t n_samples)
 
         out[i] = soft_clip(x * (1.0f - blend) + freeze_sig * blend);
     }
+
+    // ── Trigger pulse output ───────────────────────────────────────────────
+    // Hold high for ~50 ms after each onset so MOD-UI's port polling (which
+    // runs at ~30 Hz) reliably catches the 0→1→0 sequence.
+    if (onset_this_block) {
+        p->trigger_hold = static_cast<int>(0.050 * p->sample_rate);
+    }
+    p->trigger_hold -= static_cast<int>(n_samples);
+    if (p->trigger_hold < 0) p->trigger_hold = 0;
+    if (p->trigger_out) *p->trigger_out = p->trigger_hold > 0 ? 1.0f : 0.0f;
 }
 
 static void cleanup(LV2_Handle handle)

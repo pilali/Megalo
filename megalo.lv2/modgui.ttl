@@ -4,47 +4,69 @@
 <https://github.com/pilali/megalo>
     modgui:gui [
         modgui:resourcesDirectory <modgui> ;
-        modgui:iconTemplate <modgui/icon-megalo.html> ;
-        modgui:stylesheet <modgui/stylesheet-megalo.css> ;
-        modgui:screenshot <modgui/screenshot-megalo.png> ;
-        modgui:thumbnail <modgui/thumbnail-megalo.png> ;
-        modgui:brand "Pilal" ;
-        modgui:label "Megalo" ;
-        modgui:model "japanese" ;
-        modgui:panel "8-knobs" ;
-        modgui:color "pink" ;
-        modgui:knob "orange" ;
+        modgui:iconTemplate    <modgui/icon-megalo.html> ;
+        modgui:stylesheet      <modgui/stylesheet-megalo.css> ;
+        modgui:javascript      <modgui/script-megalo.js> ;
+        modgui:screenshot      <modgui/screenshot-megalo.png> ;
+        modgui:thumbnail       <modgui/thumbnail-megalo.png> ;
+        modgui:brand           "Pilal" ;
+        modgui:label           "Megalo" ;
+
+        # Ports surfaced to the host (parameter list / automation).
+        # The icon template binds each widget directly by lv2:symbol.
         modgui:port [
-            lv2:index 0 ;
-            lv2:symbol "sample_ms" ;
-            lv2:name "Sample Length" ;
+            lv2:index 2 ; lv2:symbol "onset_threshold" ; lv2:name "Onset Threshold" ;
         ] , [
-            lv2:index 1 ;
-            lv2:symbol "attack_skip_ms" ;
-            lv2:name "Skip" ;
+            lv2:index 3 ; lv2:symbol "sample_ms"       ; lv2:name "Sample Length" ;
         ] , [
-            lv2:index 2 ;
-            lv2:symbol "attack_skip_ms" ;
-            lv2:name "Attack Skip" ;
+            lv2:index 4 ; lv2:symbol "attack_skip_ms"  ; lv2:name "Attack Skip" ;
         ] , [
-            lv2:index 3 ;
-            lv2:symbol "blend" ;
-            lv2:name "Blend" ;
+            lv2:index 5 ; lv2:symbol "blend"           ; lv2:name "Blend" ;
         ] , [
-            lv2:index 4 ;
-            lv2:symbol "grain_size_ms" ;
-            lv2:name "Grain Size" ;
+            lv2:index 6 ; lv2:symbol "grain_size_ms"   ; lv2:name "Grain Size" ;
         ] , [
-            lv2:index 5 ;
-            lv2:symbol "grain_xfade_ms" ;
-            lv2:name "Xfade" ;
+            lv2:index 7 ; lv2:symbol "grain_xfade_ms"  ; lv2:name "Grain Crossfade" ;
         ] , [
-            lv2:index 6 ;
-            lv2:symbol "pitch1_semi" ;
-            lv2:name "Pitch 1" ;
+            lv2:index 8 ; lv2:symbol "base_pitch"      ; lv2:name "Base Pitch" ;
         ] , [
-            lv2:index 7 ;
-            lv2:symbol "pitch1_semi" ;
-            lv2:name "Ptch lvl" ;
+            lv2:index 9 ; lv2:symbol "pitch1_semi"     ; lv2:name "Voice 1 Pitch" ;
+        ] , [
+            lv2:index 10 ; lv2:symbol "pitch1_level"   ; lv2:name "Voice 1 Level" ;
+        ] , [
+            lv2:index 11 ; lv2:symbol "pitch2_semi"    ; lv2:name "Voice 2 Pitch" ;
+        ] , [
+            lv2:index 12 ; lv2:symbol "pitch2_level"   ; lv2:name "Voice 2 Level" ;
+        ] , [
+            lv2:index 13 ; lv2:symbol "detune_cents"   ; lv2:name "Detune" ;
+        ] , [
+            lv2:index 14 ; lv2:symbol "chorus_rate"    ; lv2:name "Chorus Rate" ;
+        ] , [
+            lv2:index 15 ; lv2:symbol "detune_blend"   ; lv2:name "Detune Blend" ;
+        ] , [
+            lv2:index 16 ; lv2:symbol "filter_type"    ; lv2:name "Filter Type" ;
+        ] , [
+            lv2:index 17 ; lv2:symbol "filter_cutoff"  ; lv2:name "Filter Cutoff" ;
+        ] , [
+            lv2:index 18 ; lv2:symbol "filter_q"       ; lv2:name "Filter Q" ;
+        ] , [
+            lv2:index 19 ; lv2:symbol "env_attack"     ; lv2:name "Attack" ;
+        ] , [
+            lv2:index 20 ; lv2:symbol "env_decay"      ; lv2:name "Decay" ;
+        ] , [
+            lv2:index 21 ; lv2:symbol "env_sustain"    ; lv2:name "Sustain" ;
+        ] , [
+            lv2:index 22 ; lv2:symbol "env_release"    ; lv2:name "Release" ;
+        ] , [
+            lv2:index 23 ; lv2:symbol "detune_enable"  ; lv2:name "Detune Enable" ;
+        ] , [
+            lv2:index 24 ; lv2:symbol "pitch1_enable"  ; lv2:name "Voice 1 Enable" ;
+        ] , [
+            lv2:index 25 ; lv2:symbol "pitch2_enable"  ; lv2:name "Voice 2 Enable" ;
+        ] ;
+
+        # Subscribe to the plugin's onset-trigger output so the modgui JS
+        # receives 'change' events when audio crosses the threshold.
+        modgui:monitoredOutputs [
+            lv2:symbol "trigger_pulse" ;
         ] ;
     ] .
