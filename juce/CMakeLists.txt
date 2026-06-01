@@ -46,7 +46,7 @@ juce_add_plugin(Megalo
 
 set(DSP_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 target_sources(Megalo PRIVATE
-    PluginProcessor.cpp ${DSP_DIR}/megalo_dsp.cpp)
+    PluginProcessor.cpp PluginEditor.cpp ${DSP_DIR}/megalo_dsp.cpp)
 target_include_directories(Megalo PRIVATE ${DSP_DIR})
 
 if(MEGALO_PHASE_VOCODER)

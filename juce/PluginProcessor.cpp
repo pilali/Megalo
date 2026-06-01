@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "PluginEditor.h"
 
 using APVTS = juce::AudioProcessorValueTreeState;
 using Range = juce::NormalisableRange<float>;
@@ -142,6 +143,7 @@ void MegaloAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     }
 
     megalo_dsp_process(dsp, &p, mono, mono, (uint32_t) n);
+    triggerPulse.store(megalo_dsp_trigger(dsp), std::memory_order_relaxed);
 
     for (int ch = 0; ch < getTotalNumOutputChannels(); ++ch)
         juce::FloatVectorOperations::copy(buffer.getWritePointer(ch), mono, n);
@@ -149,8 +151,7 @@ void MegaloAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
 
 juce::AudioProcessorEditor* MegaloAudioProcessor::createEditor()
 {
-    // Phase 2: generic editor to test immediately. Custom editor = Phase 3.
-    return new juce::GenericAudioProcessorEditor(*this);
+    return new MegaloEditor(*this);
 }
 
 void MegaloAudioProcessor::getStateInformation(juce::MemoryBlock& dest)

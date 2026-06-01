@@ -37,6 +37,11 @@ public:
 
     juce::AudioProcessorValueTreeState apvts;
 
+    // Onset-trigger pulse mirror (LV2 idx 26 trigger_pulse), updated each
+    // block so the editor can flash the threshold line — same role as the
+    // modgui monitoredOutputs subscription.
+    std::atomic<float> triggerPulse { 0.0f };
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
