@@ -8,7 +8,7 @@ and an ADSR envelope.
 
 Mono output, or decorrelated stereo output.
 
-- **LV2** — Linux desktop, MOD Audio, Raspberry Pi
+- **LV2** — Linux desktop, MOD Audio, Raspberry Pi...
 - **VST3 / AU / Standalone** — macOS (universal) and Windows, via JUCE
 
 ---
