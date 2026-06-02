@@ -42,7 +42,8 @@ enum Port : uint32_t {
     P_PITCH1_EN      = 24,   // voice-1 on/off       [0, 1]
     P_PITCH2_EN      = 25,   // voice-2 on/off       [0, 1]
     P_TRIGGER_OUT    = 26,   // momentary onset pulse [0, 1] — output for GUI flash
-    P_COUNT          = 27
+    P_AUDIO_OUT_R    = 27,   // optional right output — connected ⇒ stereo path
+    P_COUNT          = 28
 };
 
 // Number of *input* control ports stored in the ctl[] array. P_TRIGGER_OUT
@@ -53,10 +54,11 @@ static constexpr uint32_t N_CTL = P_TRIGGER_OUT - 2;
 struct MegaloLV2 {
     MegaloDsp* dsp = nullptr;
 
-    const float* audio_in  = nullptr;
-    float*       audio_out = nullptr;
+    const float* audio_in     = nullptr;
+    float*       audio_out    = nullptr;   // left / mono output
+    float*       audio_out_r  = nullptr;   // right output (NULL when host runs us mono)
     std::array<const float*, N_CTL> ctl = {};
-    float*       trigger_out = nullptr;
+    float*       trigger_out  = nullptr;
 };
 
 static inline float ctl(const MegaloLV2* p, Port port) noexcept {
@@ -86,6 +88,8 @@ static void connect_port(LV2_Handle handle, uint32_t port, void* data)
         p->audio_out = static_cast<float*>(data);
     else if (port == P_TRIGGER_OUT)
         p->trigger_out = static_cast<float*>(data);
+    else if (port == P_AUDIO_OUT_R)
+        p->audio_out_r = static_cast<float*>(data);
     else if (port >= 2 && port < P_TRIGGER_OUT)
         p->ctl[port - 2] = static_cast<const float*>(data);
 }
@@ -134,7 +138,13 @@ static void run(LV2_Handle handle, uint32_t n_samples)
 #endif
     };
 
-    megalo_dsp_process(p->dsp, &params, p->audio_in, p->audio_out, n_samples);
+    // The right output is an optional port: when the host connects it we run
+    // the decorrelated stereo path, otherwise the original mono path.
+    if (p->audio_out_r)
+        megalo_dsp_process_stereo(p->dsp, &params, p->audio_in,
+                                  p->audio_out, p->audio_out_r, n_samples);
+    else
+        megalo_dsp_process(p->dsp, &params, p->audio_in, p->audio_out, n_samples);
 
     if (p->trigger_out) *p->trigger_out = megalo_dsp_trigger(p->dsp);
 }

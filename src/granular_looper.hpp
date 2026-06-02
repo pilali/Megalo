@@ -21,6 +21,11 @@ public:
 
     void reset() noexcept { _init = false; }
 
+    // Re-seed the RNG stream. Used to decorrelate the right-channel grain
+    // cloud from the left so the stereo image is wide. Call once at setup;
+    // the stream then evolves independently across resets.
+    void seed(uint32_t s) noexcept { _rand = s; }
+
     // loop         : frozen loop buffer (nullptr / len=0 → silent)
     // grain_samples: grain duration  [16, loop_len]
     // xfade_samples: cosine fade length at each end  [8, grain_samples/2]

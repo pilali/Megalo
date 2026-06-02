@@ -113,8 +113,12 @@ bool MegaloAudioProcessor::isBusesLayoutSupported(const BusesLayout& l) const
     const auto out = l.getMainOutputChannelSet();
     if (out != juce::AudioChannelSet::mono() && out != juce::AudioChannelSet::stereo())
         return false;
+    // Mono engine: any mono/stereo input is summed to mono. Allow mono→stereo
+    // (the decorrelated stereo path) in addition to mono→mono and stereo→stereo.
     const auto in = l.getMainInputChannelSet();
-    return in == out || in.isDisabled();
+    return in == juce::AudioChannelSet::mono()
+        || in == juce::AudioChannelSet::stereo()
+        || in.isDisabled();
 }
 
 void MegaloAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -148,11 +152,21 @@ void MegaloAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         juce::FloatVectorOperations::clear(mono, n);
     }
 
-    megalo_dsp_process(dsp, &p, mono, mono, (uint32_t) n);
+    const int numOut = getTotalNumOutputChannels();
+    if (numOut >= 2) {
+        // Decorrelated stereo. mono (scratch) is distinct from the output
+        // channels, so the in≠out requirement of the stereo path is met.
+        float* outL = buffer.getWritePointer(0);
+        float* outR = buffer.getWritePointer(1);
+        megalo_dsp_process_stereo(dsp, &p, mono, outL, outR, (uint32_t) n);
+        for (int ch = 2; ch < numOut; ++ch)
+            juce::FloatVectorOperations::copy(buffer.getWritePointer(ch), outL, n);
+    } else {
+        megalo_dsp_process(dsp, &p, mono, mono, (uint32_t) n);
+        for (int ch = 0; ch < numOut; ++ch)
+            juce::FloatVectorOperations::copy(buffer.getWritePointer(ch), mono, n);
+    }
     triggerPulse.store(megalo_dsp_trigger(dsp), std::memory_order_relaxed);
-
-    for (int ch = 0; ch < getTotalNumOutputChannels(); ++ch)
-        juce::FloatVectorOperations::copy(buffer.getWritePointer(ch), mono, n);
 }
 
 juce::AudioProcessorEditor* MegaloAudioProcessor::createEditor()

@@ -2,9 +2,23 @@ name: build
 
 on:
   push:
-    branches: [ JUCE ]
+    # JUCE has been merged into master; build there plus active feature
+    # branches. (The old `JUCE` branch no longer exists.)
+    branches:
+      - master
+      - claude/lv2-mono-stereo-expansion-vr8cN
     tags: [ 'v*' ]
+  pull_request:
+    branches: [ master ]
   workflow_dispatch:
+
+# Collapse redundant runs for the same branch. A branch with an open PR
+# fires both `push` and `pull_request`; normalising the group to the head
+# branch name (push → ref_name, PR → head.ref) lets the two cancel each
+# other, and a new commit supersedes an in-flight build.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   macos:
