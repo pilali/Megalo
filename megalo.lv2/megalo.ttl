@@ -294,4 +294,15 @@
         lv2:default 0.0 ;
         lv2:minimum 0.0 ;
         lv2:maximum 1.0 ;
+    ] ,
+
+    # ── Optional right output ────────────────────────────────────────────
+    # Connected by the host ⇒ decorrelated stereo. Left unconnected ⇒ the
+    # plugin runs exactly as the original mono effect.
+    [
+        a lv2:AudioPort, lv2:OutputPort ;
+        lv2:index 27 ;
+        lv2:symbol "audio_out_r" ;
+        lv2:name   "Audio Out R" ;
+        lv2:portProperty lv2:connectionOptional
     ] .

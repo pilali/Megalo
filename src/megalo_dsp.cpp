@@ -30,6 +30,11 @@ static constexpr int XFADE_MS        = 20;
 static constexpr int RETRIGGER_MS    = 200;
 static constexpr int CAPTURE_FADE_MS = 10;
 
+// Stereo width: left/right filter cutoffs are spread by ±this fraction, and
+// the right detune LFO runs anti-phase to the left. Subtle enough to stay
+// mono-compatible (the dry signal is never decorrelated).
+static constexpr float CUTOFF_STEREO_SPREAD = 0.03f;   // ±3 %
+
 // ── DSP instance ─────────────────────────────────────────────────────────────
 // = the former LV2 Megalo struct, minus the port pointers (audio_in/out, ctl[],
 //   trigger_out), plus trigger_value to hold the GUI pulse for the getter.
@@ -41,6 +46,15 @@ struct MegaloDsp {
     GrainPlayer  gp_d;  // detuned copy (always granular)
     GrainPlayer  gp1;   // pitch voice 1 — granular engine
     GrainPlayer  gp2;   // pitch voice 2 — granular engine
+
+    // Right-channel mirror, used only by megalo_dsp_process_stereo(). Each
+    // grain player is seeded with a different RNG stream so the right grain
+    // cloud is decorrelated from the left → wide stereo image. Untouched (and
+    // therefore free) on the mono path.
+    GrainPlayer  gp0_r;
+    GrainPlayer  gp_d_r;
+    GrainPlayer  gp1_r;
+    GrainPlayer  gp2_r;
 #ifdef MEGALO_PHASE_VOCODER
     PhaseVocoder pv1;   // pitch voice 1 — phase-vocoder engine (runtime-selectable)
     PhaseVocoder pv2;   // pitch voice 2 — phase-vocoder engine
@@ -48,6 +62,7 @@ struct MegaloDsp {
     float        pv2_last_semi = 1e9f;
 #endif
     Biquad       filter;
+    Biquad       filter_r;   // right channel — micro-offset cutoff (stereo only)
     Envelope     envelope;
 
     double lfo_phase = 0.0;
@@ -55,6 +70,7 @@ struct MegaloDsp {
     float cached_ftype  = -1.0f;
     float cached_cutoff = -1.0f;
     float cached_q      = -1.0f;
+    int   cached_stereo = -1;   // filter setup depends on mono vs stereo cutoff
 
     // Onset pulse output (held high for a short window after each detected
     // onset so the GUI poll catches the transition reliably).
@@ -79,6 +95,12 @@ MegaloDsp* megalo_dsp_new(double sample_rate)
     if (!p) return nullptr;
     p->sample_rate = sample_rate;
     p->freeze.init(sample_rate);
+    // Decorrelate the right-channel grain clouds from the left (which keep the
+    // default 12345 seed). Distinct constants so each voice is independent too.
+    p->gp0_r.seed(0x9E3779B9u);
+    p->gp_d_r.seed(0x85EBCA6Bu);
+    p->gp1_r.seed(0xC2B2AE35u);
+    p->gp2_r.seed(0x27D4EB2Fu);
 #ifdef MEGALO_PHASE_VOCODER
     p->pv1.init(sample_rate);
     p->pv2.init(sample_rate);
@@ -100,23 +122,34 @@ void megalo_dsp_reset(MegaloDsp* p)
     p->gp_d.reset();
     p->gp1.reset();
     p->gp2.reset();
+    p->gp0_r.reset();
+    p->gp_d_r.reset();
+    p->gp1_r.reset();
+    p->gp2_r.reset();
 #ifdef MEGALO_PHASE_VOCODER
     p->pv1.reset();
     p->pv2.reset();
     p->pv1_last_semi = p->pv2_last_semi = 1e9f;
 #endif
     p->filter.reset();
+    p->filter_r.reset();
     p->envelope.reset();
     p->lfo_phase = 0.0;
     p->cached_ftype = p->cached_cutoff = p->cached_q = -1.0f;
+    p->cached_stereo = -1;
     p->trigger_hold = 0;
     p->trigger_value = 0.0f;
 }
 
-// = the former run(); reads p_->field instead of *self->port_x.
-void megalo_dsp_process(MegaloDsp* p, const MegaloParams* p_,
-                        const float* in, float* out, uint32_t n_samples)
+// Shared worker for the mono and stereo entry points. outR == nullptr selects
+// the mono path, which stays bit-identical to the original run(): only the
+// left chain runs and the right-channel state is never touched. When outR is
+// non-null the right chain runs too, decorrelated from the left.
+static void process_impl(MegaloDsp* p, const MegaloParams* p_,
+                         const float* in, float* outL, float* outR,
+                         uint32_t n_samples)
 {
+    const bool  stereo = (outR != nullptr);
     const float sr = static_cast<float>(p->sample_rate);
 
     // ── Snapshot controls (block boundary) ────────────────────────────────
@@ -156,14 +189,26 @@ void megalo_dsp_process(MegaloDsp* p, const MegaloParams* p_,
 #endif
 
     // ── Filter ────────────────────────────────────────────────────────────
-    if (filt_type != p->cached_ftype || filt_cutoff != p->cached_cutoff || filt_q != p->cached_q) {
+    // Mono: exact cutoff (bit-identical to before). Stereo: spread the L/R
+    // cutoffs by ±CUTOFF_STEREO_SPREAD for a subtle tonal decorrelation.
+    if (filt_type != p->cached_ftype || filt_cutoff != p->cached_cutoff ||
+        filt_q != p->cached_q || (int)stereo != p->cached_stereo) {
         Biquad::Type btype = (filt_type < 0.5f) ? Biquad::LP
                            : (filt_type < 1.5f) ? Biquad::HP
                            :                      Biquad::BP;
-        p->filter.setup(btype, filt_cutoff, filt_q, sr);
+        const float nyq = sr * 0.499f;
+        const float cut_l = stereo
+            ? std::clamp(filt_cutoff * (1.0f - CUTOFF_STEREO_SPREAD), 20.0f, nyq)
+            : filt_cutoff;
+        p->filter.setup(btype, cut_l, filt_q, sr);
+        if (stereo) {
+            const float cut_r = std::clamp(filt_cutoff * (1.0f + CUTOFF_STEREO_SPREAD), 20.0f, nyq);
+            p->filter_r.setup(btype, cut_r, filt_q, sr);
+        }
         p->cached_ftype  = filt_type;
         p->cached_cutoff = filt_cutoff;
         p->cached_q      = filt_q;
+        p->cached_stereo = (int)stereo;
     }
 
     p->envelope.set(env_atk, env_dcy, env_sus, env_rel, sr);
@@ -207,6 +252,12 @@ void megalo_dsp_process(MegaloDsp* p, const MegaloParams* p_,
             p->gp_d.reset();
             p->gp1.reset();
             p->gp2.reset();
+            if (stereo) {
+                p->gp0_r.reset();
+                p->gp_d_r.reset();
+                p->gp1_r.reset();
+                p->gp2_r.reset();
+            }
 #ifdef MEGALO_PHASE_VOCODER
             p->pv1.reset();
             p->pv2.reset();
@@ -250,9 +301,48 @@ void megalo_dsp_process(MegaloDsp* p, const MegaloParams* p_,
             + (pitch2_en ? v2 * p2_lvl : 0.0f);
 
         freeze_sig  = p->filter.process(freeze_sig);
-        freeze_sig *= p->envelope.process();
 
-        out[i] = soft_clip(x * (1.0f - blend) + freeze_sig * blend);
+        // Advance the envelope exactly once per sample; both channels share it.
+        const float env_g = p->envelope.process();
+        freeze_sig *= env_g;
+
+        outL[i] = soft_clip(x * (1.0f - blend) + freeze_sig * blend);
+
+        if (stereo) {
+            // Right channel: independent grain randomisation (decorrelated
+            // seeds), anti-phase detune LFO, and the micro-offset filter.
+            // The dry x stays identical on both sides → mono-compatible.
+            const float det_speed_r = base_speed *
+                static_cast<float>(1.0 + (det_ratio - 1.0) * (-lfo));
+
+            const float v0r = p->gp0_r.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
+            const float vdr = p->gp_d_r.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed_r);
+            float v1r, v2r;
+#ifdef MEGALO_PHASE_VOCODER
+            if (use_pv) {
+                // The phase vocoder is heavy; share its pitch voices across
+                // channels. Width still comes from the granular base + detune.
+                v1r = v1;
+                v2r = v2;
+            } else
+#endif
+            {
+                v1r = p->gp1_r.process(ldata, llen, grain_samples, grain_xfade_smp, v1_speed);
+                v2r = p->gp2_r.process(ldata, llen, grain_samples, grain_xfade_smp, v2_speed);
+            }
+
+            const float base_r = detune_en
+                ? v0r * (1.0f - detune_blend) + vdr * detune_blend
+                : v0r;
+            float freeze_r = base_r
+                + (pitch1_en ? v1r * p1_lvl : 0.0f)
+                + (pitch2_en ? v2r * p2_lvl : 0.0f);
+
+            freeze_r  = p->filter_r.process(freeze_r);
+            freeze_r *= env_g;
+
+            outR[i] = soft_clip(x * (1.0f - blend) + freeze_r * blend);
+        }
     }
 
     // ── Trigger pulse output ───────────────────────────────────────────────
@@ -264,6 +354,21 @@ void megalo_dsp_process(MegaloDsp* p, const MegaloParams* p_,
     p->trigger_hold -= static_cast<int>(n_samples);
     if (p->trigger_hold < 0) p->trigger_hold = 0;
     p->trigger_value = p->trigger_hold > 0 ? 1.0f : 0.0f;
+}
+
+// = the former run(); mono in → mono out (unchanged behaviour).
+void megalo_dsp_process(MegaloDsp* p, const MegaloParams* p_,
+                        const float* in, float* out, uint32_t n_samples)
+{
+    process_impl(p, p_, in, out, nullptr, n_samples);
+}
+
+// Mono in → decorrelated stereo out.
+void megalo_dsp_process_stereo(MegaloDsp* p, const MegaloParams* p_,
+                               const float* in, float* outL, float* outR,
+                               uint32_t n_samples)
+{
+    process_impl(p, p_, in, outL, outR, n_samples);
 }
 
 float megalo_dsp_trigger(const MegaloDsp* p)

@@ -51,6 +51,15 @@ void       megalo_dsp_reset(MegaloDsp*);     /* = activate() : clears filters/st
 void       megalo_dsp_process(MegaloDsp*, const MegaloParams*,
                               const float* in, float* out, uint32_t n);
 
+/* Process n samples from a mono input into a decorrelated stereo pair.
+   The dry signal stays centred (mono-compatible); the granular wet is
+   decorrelated between channels (independent grain randomisation,
+   anti-phase detune LFO, micro-offset filter cutoff) for stereo width.
+   outL and outR must be distinct buffers, both different from in. */
+void       megalo_dsp_process_stereo(MegaloDsp*, const MegaloParams*,
+                                     const float* in, float* outL, float* outR,
+                                     uint32_t n);
+
 /* Onset-trigger pulse for the GUI (LV2 idx 26 trigger_pulse): returns the
    value computed by the most recent megalo_dsp_process() call — 1.0f while
    the post-onset hold window is active, 0.0f otherwise. */
