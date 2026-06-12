@@ -238,13 +238,14 @@ void TimeHandle::paint(juce::Graphics& g)
     g.setColour(megalo::kWhite.withAlpha(0.35f));
     g.fillRect(juce::Rectangle<float>(lineX, 0.0f, 2.0f, (float) b.getHeight()));
 
-    // Label + value stacked near the top.
+    // Label + value stacked near the top, below the bracket caption.
     g.setColour(megalo::kWhite.withAlpha(0.9f));
     g.setFont(megalo::font(11.0f, true));
-    g.drawText(label, b.removeFromTop(14), juce::Justification::centred, false);
+    g.drawText(label, juce::Rectangle<int>(0, 15, getWidth(), 12),
+               juce::Justification::centred, false);
     g.setColour(megalo::kWhite.withAlpha(0.62f));
     g.setFont(megalo::font(10.0f));
-    g.drawText(fmtValue(label, value), juce::Rectangle<int>(0, 14, getWidth(), 12),
+    g.drawText(fmtValue(label, value), juce::Rectangle<int>(0, 27, getWidth(), 12),
                juce::Justification::centred, false);
 
     // Knob dot centered on the track line, both axes.
@@ -365,7 +366,7 @@ WindowPanel::WindowPanel(APVTS& a) : threshold(a, "onset_threshold"), apvts(a)
 {
     topHandles.add(new TimeHandle(a, "sample_ms",      "SAMPLE", juce::Colour(0xfffff5e6)));
     topHandles.add(new TimeHandle(a, "attack_skip_ms", "SKIP",   juce::Colour(0xfffff5e6)));
-    topHandles.add(new TimeHandle(a, "grain_size_ms",  "GRAIN",  juce::Colour(0xffffe1bf)));
+    topHandles.add(new TimeHandle(a, "grain_size_ms",  "SIZE",   juce::Colour(0xffffe1bf)));
     topHandles.add(new TimeHandle(a, "grain_xfade_ms", "XFADE",  juce::Colour(0xffffe1bf)));
     for (auto* h : topHandles) addAndMakeVisible(h);
 
@@ -469,11 +470,12 @@ void WindowPanel::paint(juce::Graphics& g)
     g.setColour(megalo::kWhite.withAlpha(0.85f));
     g.fillRect(juce::Rectangle<float>(0.0f, mid - 0.5f, b.getWidth(), 1.0f));
 
-    // Faint grouping brackets (WINDOW = sample+skip, GRAIN = grain+xfade).
+    // Faint grouping brackets (WINDOW = sample+skip, GRAIN = size+xfade),
+    // inset from the window's top edge.
     g.setColour(megalo::kWhite.withAlpha(0.55f));
-    g.setFont(megalo::font(9.0f, true));
-    g.drawText("WINDOW", juce::Rectangle<int>(0, 1, getWidth() / 2, 11), juce::Justification::centred, false);
-    g.drawText("GRAIN",  juce::Rectangle<int>(getWidth() / 2, 1, getWidth() / 2, 11), juce::Justification::centred, false);
+    g.setFont(megalo::font(10.0f, true));
+    g.drawText("WINDOW", juce::Rectangle<int>(0, 4, getWidth() / 2, 12), juce::Justification::centred, false);
+    g.drawText("GRAIN",  juce::Rectangle<int>(getWidth() / 2, 4, getWidth() / 2, 12), juce::Justification::centred, false);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

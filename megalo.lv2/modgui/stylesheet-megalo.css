@@ -374,7 +374,7 @@
 
 /* ── Functional grouping brackets above the top row ──── */
 .megalo-panel{{{cns}}} .megalo-brackets {
-    height: 12px;
+    height: 15px;
     left: 0;
     pointer-events: none;
     position: absolute;
@@ -390,18 +390,19 @@
     box-sizing: border-box;
     color: rgba(255,255,255,0.6);
     font-family: "Nexa", sans-serif;
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 800;
     height: 100%;
     letter-spacing: 0.16em;
+    padding-top: 3px;       /* keep the caption clear of the window edge */
     position: absolute;
     text-align: center;
     text-transform: uppercase;
 }
 /* Push the top-handle label/value down so the bracket on top
    has clear room. */
-.megalo-panel{{{cns}}} .megalo-handles-top .megalo-handle-label { top: 13px; }
-.megalo-panel{{{cns}}} .megalo-handles-top .megalo-handle-value { top: 26px; }
+.megalo-panel{{{cns}}} .megalo-handles-top .megalo-handle-label { top: 15px; }
+.megalo-panel{{{cns}}} .megalo-handles-top .megalo-handle-value { top: 27px; }
 
 /* ── Live drag tooltip ──────────────────────────────── */
 .megalo-panel{{{cns}}} .megalo-tooltip {
