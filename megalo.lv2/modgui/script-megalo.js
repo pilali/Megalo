@@ -126,6 +126,28 @@ function (event, funcs) {
 
         line.attr('d', lineD)
         fill.attr('d', lineD + ' Z')
+
+        /* Park each A/D/S/R knob on its breakpoint of the curve.
+           A = attack peak, D = end of decay, S = middle of the
+           sustain hold, R = end of release. Coordinates are in the
+           1000x100 viewBox; each knob lives in its own quarter-width
+           column, so convert to a percentage local to that column
+           (the knob CSS recenters with translate(-50%,-50%)). */
+        var anchors = {
+            env_attack:  pts[1],
+            env_decay:   pts[2],
+            env_sustain: [ax + dx + holdW / 2, sustainY],
+            env_release: pts[4]
+        }
+        var col = 0
+        for (var sym in anchors) {
+            var knob = icon.find('.megalo-handle[data-handle="' + sym + '"] .megalo-handle-knob')[0]
+            if (knob) {
+                knob.style.left = (((anchors[sym][0] / W) - col * 0.25) * 4 * 100).toFixed(2) + '%'
+                knob.style.top  = ((anchors[sym][1] / H) * 100).toFixed(2) + '%'
+            }
+            col++
+        }
     }
 
     if (event.type === 'start') {

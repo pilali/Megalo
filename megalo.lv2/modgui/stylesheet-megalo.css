@@ -217,15 +217,18 @@
     width: 2px;
 }
 
+/* Knob is centered on the 2px track line (same left formula as the
+   track plus half the line width) and vertically centered in the slot. */
 .megalo-panel{{{cns}}} .megalo-handles-top .megalo-handle-knob {
     background: rgba(255,255,255,0.95);
     border-radius: 50%;
     box-shadow: 0 0 8px rgba(255,255,255,0.35);
     height: 12px;
-    left: calc(var(--value, 0.5) * (100% - 12px));
+    left: calc(var(--value, 0.5) * (100% - 2px) + 1px);
     pointer-events: none;
     position: absolute;
-    top: 14px;       /* leave room for the SAMPLE/SKIP/... label above */
+    top: 50%;
+    transform: translate(-50%, -50%);
     transition: box-shadow 120ms ease;
     width: 12px;
     z-index: 1;
@@ -266,16 +269,19 @@
     vector-effect: non-scaling-stroke;
 }
 
+/* ADSR knobs ride ON the envelope curve: left/top are written by
+   updateEnvelope() in script-megalo.js (percentages local to each
+   column) so each dot sits on its breakpoint of the curve. */
 .megalo-panel{{{cns}}} .megalo-handles-bottom .megalo-handle-knob {
     background: rgba(255,255,255,0.95);
     border-radius: 50%;
-    bottom: calc(var(--value, 0.5) * (100% - 12px));
     box-shadow: 0 0 8px rgba(255,255,255,0.35);
     height: 12px;
     left: 50%;
     pointer-events: none;
     position: absolute;
-    transform: translateX(-50%);
+    top: 50%;
+    transform: translate(-50%, -50%);
     transition: box-shadow 120ms ease;
     width: 12px;
     z-index: 1;
@@ -290,7 +296,7 @@
     color: rgba(255,255,255,0.62);
     display: block;
     font-family: "Questrial", sans-serif;
-    font-size: 8px;
+    font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.04em;
     pointer-events: none;
@@ -311,19 +317,19 @@
     position: absolute;
     transform: translateX(-50%);
 }
-.megalo-panel{{{cns}}} .megalo-handles-bottom .megalo-handle-label  { bottom: 12px; }
+.megalo-panel{{{cns}}} .megalo-handles-bottom .megalo-handle-label  { bottom: 14px; }
 .megalo-panel{{{cns}}} .megalo-handles-bottom .megalo-handle-value  { bottom: 2px; }
 
 /* Threshold readout: small text aligned to the right edge */
 .megalo-panel{{{cns}}} .megalo-threshold-value {
     color: rgba(255,255,255,0.85);
     font-family: "Questrial", sans-serif;
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 600;
     pointer-events: none;
     position: absolute;
     right: 4px;
-    top: -10px;
+    top: -13px;
 }
 
 /* ── Time-axis ruler above the orange window ──────────
@@ -353,7 +359,7 @@
 .megalo-panel{{{cns}}} .megalo-timescale-label {
     color: rgba(255,255,255,0.55);
     font-family: "Questrial", sans-serif;
-    font-size: 7px;
+    font-size: 9px;
     font-weight: 600;
     letter-spacing: 0.04em;
     position: absolute;
@@ -368,7 +374,7 @@
 
 /* ── Functional grouping brackets above the top row ──── */
 .megalo-panel{{{cns}}} .megalo-brackets {
-    height: 9px;
+    height: 12px;
     left: 0;
     pointer-events: none;
     position: absolute;
@@ -384,7 +390,7 @@
     box-sizing: border-box;
     color: rgba(255,255,255,0.6);
     font-family: "Nexa", sans-serif;
-    font-size: 7px;
+    font-size: 9px;
     font-weight: 800;
     height: 100%;
     letter-spacing: 0.16em;
@@ -392,11 +398,10 @@
     text-align: center;
     text-transform: uppercase;
 }
-/* Push the top-handle label/value/knob down so the bracket on top
+/* Push the top-handle label/value down so the bracket on top
    has clear room. */
-.megalo-panel{{{cns}}} .megalo-handles-top .megalo-handle-label { top: 11px; }
-.megalo-panel{{{cns}}} .megalo-handles-top .megalo-handle-value { top: 21px; }
-.megalo-panel{{{cns}}} .megalo-handles-top .megalo-handle-knob  { top: 32px; }
+.megalo-panel{{{cns}}} .megalo-handles-top .megalo-handle-label { top: 13px; }
+.megalo-panel{{{cns}}} .megalo-handles-top .megalo-handle-value { top: 26px; }
 
 /* ── Live drag tooltip ──────────────────────────────── */
 .megalo-panel{{{cns}}} .megalo-tooltip {
@@ -406,7 +411,7 @@
     color: #fff;
     display: none;
     font-family: "Questrial", sans-serif;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     left: 0;
     padding: 2px 7px;
@@ -431,7 +436,7 @@
 /* Handle label — small text above/below the handle column */
 .megalo-panel{{{cns}}} .megalo-handle-label {
     color: rgba(255,255,255,0.9);
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 700;
     left: 50%;
     letter-spacing: 0.1em;
@@ -482,7 +487,7 @@
 .megalo-panel{{{cns}}} .megalo-group-title {
     color: #f0801a;
     font-family: "Nexa", sans-serif;
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 800;
     letter-spacing: 0.12em;
     text-transform: uppercase;
@@ -540,7 +545,7 @@
 
 .megalo-panel{{{cns}}} .megalo-knob-label {
     color: rgba(255,255,255,0.7);
-    font-size: 8px;
+    font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.08em;
     margin-top: 2px;
@@ -584,12 +589,12 @@
     color: rgba(255,255,255,0.5);
     cursor: pointer;
     display: flex;
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 700;
     justify-content: center;
     letter-spacing: 0.06em;
     transition: background 120ms ease, color 120ms ease;
-    width: 22px;
+    width: 24px;
 }
 
 .megalo-panel{{{cns}}} .megalo-switch3-opt:hover {
