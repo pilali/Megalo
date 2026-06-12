@@ -447,13 +447,9 @@
     white-space: nowrap;
 }
 
-.megalo-panel{{{cns}}} .megalo-handles-top .megalo-handle-label {
-    top: 2px;
-}
-
-.megalo-panel{{{cns}}} .megalo-handles-bottom .megalo-handle-label {
-    bottom: 2px;
-}
+/* Vertical offsets for these labels live in the handle-row section
+   above (top: 13px / bottom: 14px) so they clear the brackets and
+   the value readouts. */
 
 /* ── Bottom controls row ────────────────────────────────── */
 .megalo-panel{{{cns}}} .megalo-controls {
