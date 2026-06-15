@@ -30,6 +30,18 @@ static constexpr int XFADE_MS        = 20;
 static constexpr int RETRIGGER_MS    = 200;
 static constexpr int CAPTURE_FADE_MS = 10;
 
+// Latency-compensation crossfade ("no audio hole").
+// When an onset triggers a new freeze, the captured loop is not ready for the
+// whole PendingSkip+Recording window (hundreds of ms). During that gap the wet
+// path is silent (first freeze) or the stale loop fading out, so at full blend
+// the output would drop out. We fill the gap with the live dry signal and then
+// crossfade back to the processed pad once the new loop is ready.
+//   comp = 1 → output forced to dry (live signal); comp = 0 → user blend.
+static constexpr int COMP_FADE_IN_MS  = 15;   // onset → dry (fast, anti-click)
+static constexpr int COMP_FADE_OUT_MS = 60;   // floor for dry → processed fade
+                                              // (extended to the env attack so a
+                                              //  slow pad swell stays covered)
+
 // Stereo width: left/right filter cutoffs are spread by ±this fraction, and
 // the right detune LFO runs anti-phase to the left. Subtle enough to stay
 // mono-compatible (the dry signal is never decorrelated).
@@ -76,6 +88,10 @@ struct MegaloDsp {
     // onset so the GUI poll catches the transition reliably).
     int   trigger_hold  = 0;   // samples remaining in the held-high window
     float trigger_value = 0.0f;
+
+    // Latency-compensation crossfade state (see COMP_FADE_*_MS above).
+    float comp_level  = 0.0f;  // current dry-fill amount [0,1]
+    float comp_target = 0.0f;  // 1 on onset (cover the gap), 0 once loop is ready
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -139,6 +155,8 @@ void megalo_dsp_reset(MegaloDsp* p)
     p->cached_stereo = -1;
     p->trigger_hold = 0;
     p->trigger_value = 0.0f;
+    p->comp_level = 0.0f;
+    p->comp_target = 0.0f;
 }
 
 // Shared worker for the mono and stereo entry points. outR == nullptr selects
@@ -213,6 +231,14 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
 
     p->envelope.set(env_atk, env_dcy, env_sus, env_rel, sr);
 
+    // Latency-compensation crossfade increments (per sample). The dry fades in
+    // fast on onset (anti-click) and fades back out over at least the envelope
+    // attack, so the live dry covers the whole pad swell — no audible gap.
+    const float comp_up_inc = 1.0f /
+        std::max(1.0f, COMP_FADE_IN_MS * 0.001f * sr);
+    const float comp_dn_inc = 1.0f /
+        std::max(1.0f, std::max((float)COMP_FADE_OUT_MS, env_atk) * 0.001f * sr);
+
     const double lfo_inc  = static_cast<double>(chorus_rate) / p->sample_rate;
     // det_speed range per sample: base_speed * 2^(±detune_ct/1200).
     // Precompute the max ratio; the per-sample LFO modulates within [-1,+1].
@@ -246,6 +272,8 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
 
         if (evt == FreezeEvent::Onset) {
             p->envelope.release();
+            // Cover the capture latency with the live dry signal.
+            p->comp_target = 1.0f;
             onset_this_block = true;
         } else if (evt == FreezeEvent::LoopReady) {
             p->gp0.reset();
@@ -263,7 +291,15 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             p->pv2.reset();
 #endif
             p->envelope.trigger();
+            // New pad is ready → crossfade from the dry fill back to the blend.
+            p->comp_target = 0.0f;
         }
+
+        // Ramp the dry-fill amount toward its target (fast up, slow down).
+        if (p->comp_level < p->comp_target)
+            p->comp_level = std::min(p->comp_target, p->comp_level + comp_up_inc);
+        else if (p->comp_level > p->comp_target)
+            p->comp_level = std::max(p->comp_target, p->comp_level - comp_dn_inc);
 
         // LFO
         const double lfo = std::sin(2.0 * M_PI * p->lfo_phase);
@@ -306,7 +342,8 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
         const float env_g = p->envelope.process();
         freeze_sig *= env_g;
 
-        outL[i] = soft_clip(x * (1.0f - blend) + freeze_sig * blend);
+        const float mixL = x * (1.0f - blend) + freeze_sig * blend;
+        outL[i] = soft_clip(x * p->comp_level + mixL * (1.0f - p->comp_level));
 
         if (stereo) {
             // Right channel: independent grain randomisation (decorrelated
@@ -341,7 +378,8 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             freeze_r  = p->filter_r.process(freeze_r);
             freeze_r *= env_g;
 
-            outR[i] = soft_clip(x * (1.0f - blend) + freeze_r * blend);
+            const float mixR = x * (1.0f - blend) + freeze_r * blend;
+            outR[i] = soft_clip(x * p->comp_level + mixR * (1.0f - p->comp_level));
         }
     }
 
