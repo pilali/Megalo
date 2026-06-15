@@ -84,7 +84,7 @@ void KnobControl::resized()
 void KnobControl::paint(juce::Graphics& g)
 {
     g.setColour(megalo::kWhite.withAlpha(0.7f));
-    g.setFont(megalo::font(9.0f, true));
+    g.setFont(megalo::font(11.0f, true));
     g.drawText(caption, getLocalBounds().removeFromBottom(14),
                juce::Justification::centred, false);
 }
@@ -144,7 +144,7 @@ void FilterTypeSwitch::paint(juce::Graphics& g)
             g.fillRoundedRectangle(segs[i].toFloat().reduced(1.0f), 3.0f);
         }
         g.setColour(i == index ? megalo::kPanel : megalo::kWhite.withAlpha(0.5f));
-        g.setFont(megalo::font(9.0f, true));
+        g.setFont(megalo::font(11.0f, true));
         g.drawText(lbl[i], segs[i], juce::Justification::centred, false);
     }
 }
@@ -186,7 +186,7 @@ void PitchEngineSwitch::paint(juce::Graphics& g)
             g.fillRoundedRectangle(segs[i].toFloat().reduced(1.0f), 3.0f);
         }
         g.setColour(i == index ? megalo::kPanel : megalo::kWhite.withAlpha(0.5f));
-        g.setFont(megalo::font(9.0f, true));
+        g.setFont(megalo::font(11.0f, true));
         g.drawText(lbl[i], segs[i], juce::Justification::centred, false);
     }
 }
@@ -238,18 +238,21 @@ void TimeHandle::paint(juce::Graphics& g)
     g.setColour(megalo::kWhite.withAlpha(0.35f));
     g.fillRect(juce::Rectangle<float>(lineX, 0.0f, 2.0f, (float) b.getHeight()));
 
-    // Label, value, knob dot stacked near the top.
+    // Label + value stacked near the top, below the bracket caption.
     g.setColour(megalo::kWhite.withAlpha(0.9f));
-    g.setFont(megalo::font(9.0f, true));
-    g.drawText(label, b.removeFromTop(12), juce::Justification::centred, false);
+    g.setFont(megalo::font(11.0f, true));
+    g.drawText(label, juce::Rectangle<int>(0, 15, getWidth(), 12),
+               juce::Justification::centred, false);
     g.setColour(megalo::kWhite.withAlpha(0.62f));
-    g.setFont(megalo::font(8.0f));
-    g.drawText(fmtValue(label, value), juce::Rectangle<int>(0, 12, getWidth(), 10),
+    g.setFont(megalo::font(10.0f));
+    g.drawText(fmtValue(label, value), juce::Rectangle<int>(0, 27, getWidth(), 12),
                juce::Justification::centred, false);
 
-    const float knobX = norm * (float) (getWidth() - 12);
+    // Knob dot centered on the track line, both axes.
+    const float cx = lineX + 1.0f;
+    const float cy = (float) getHeight() * 0.5f;
     g.setColour(tint);
-    g.fillEllipse(knobX, 30.0f, 12.0f, 12.0f);
+    g.fillEllipse(cx - 6.0f, cy - 6.0f, 12.0f, 12.0f);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -265,6 +268,9 @@ EnvHandle::EnvHandle(APVTS& apvts, const juce::String& paramID, const juce::Stri
                 value = v;
                 norm  = param->getNormalisableRange().convertTo0to1(v);
                 repaint();
+                // The dot rides on the envelope curve drawn by the parent.
+                if (auto* parent = getParentComponent())
+                    parent->repaint();
             });
         attachment->sendInitialUpdate();
     }
@@ -284,16 +290,14 @@ void EnvHandle::mouseUp  (const juce::MouseEvent&)   { if (attachment) attachmen
 
 void EnvHandle::paint(juce::Graphics& g)
 {
-    const float knobY = (1.0f - norm) * (float) (getHeight() - 12);
-    g.setColour(juce::Colour(0xffffd9a8));
-    g.fillEllipse((float) (getWidth() - 12) * 0.5f, knobY, 12.0f, 12.0f);
-
+    // The knob dot itself is drawn by WindowPanel on the envelope curve;
+    // this component only handles the drag gesture and the label/readout.
     g.setColour(megalo::kWhite.withAlpha(0.9f));
-    g.setFont(megalo::font(9.0f, true));
-    g.drawText(label, getLocalBounds().removeFromBottom(12), juce::Justification::centred, false);
+    g.setFont(megalo::font(11.0f, true));
+    g.drawText(label, getLocalBounds().removeFromBottom(14), juce::Justification::centred, false);
     g.setColour(megalo::kWhite.withAlpha(0.62f));
-    g.setFont(megalo::font(8.0f));
-    g.drawText(fmtValue(label, value), juce::Rectangle<int>(0, getHeight() - 22, getWidth(), 10),
+    g.setFont(megalo::font(10.0f));
+    g.drawText(fmtValue(label, value), juce::Rectangle<int>(0, getHeight() - 26, getWidth(), 12),
                juce::Justification::centred, false);
 }
 
@@ -350,8 +354,8 @@ void ThresholdLine::paint(juce::Graphics& g)
 
     // Value readout, right-aligned.
     g.setColour(megalo::kWhite.withAlpha(0.85f));
-    g.setFont(megalo::font(9.0f, true));
-    g.drawText(juce::String(norm, 2), juce::Rectangle<int>(getWidth() - 44, lineY - 12, 40, 11),
+    g.setFont(megalo::font(11.0f, true));
+    g.drawText(juce::String(norm, 2), juce::Rectangle<int>(getWidth() - 50, lineY - 14, 46, 13),
                juce::Justification::centredRight, false);
 }
 
@@ -362,7 +366,7 @@ WindowPanel::WindowPanel(APVTS& a) : threshold(a, "onset_threshold"), apvts(a)
 {
     topHandles.add(new TimeHandle(a, "sample_ms",      "SAMPLE", juce::Colour(0xfffff5e6)));
     topHandles.add(new TimeHandle(a, "attack_skip_ms", "SKIP",   juce::Colour(0xfffff5e6)));
-    topHandles.add(new TimeHandle(a, "grain_size_ms",  "GRAIN",  juce::Colour(0xffffe1bf)));
+    topHandles.add(new TimeHandle(a, "grain_size_ms",  "SIZE",   juce::Colour(0xffffe1bf)));
     topHandles.add(new TimeHandle(a, "grain_xfade_ms", "XFADE",  juce::Colour(0xffffe1bf)));
     for (auto* h : topHandles) addAndMakeVisible(h);
 
@@ -418,18 +422,21 @@ void WindowPanel::paint(juce::Graphics& g)
     g.setColour(juce::Colour(0xff2a2d31).withAlpha(0.85f));
     g.fillPath(wave);
 
-    // ADSR envelope curve in the bottom half (decorative, follows A/D/S/R).
+    // ADSR envelope curve in the bottom half, mirroring the modgui:
+    // A/D/R share the timeline proportionally, the sustain hold is a
+    // fixed 18% slice so it stays visible at any setting.
     auto raw = [&](const char* id) { return apvts.getRawParameterValue(id)->load(); };
     const float A = raw("env_attack"), D = raw("env_decay");
     const float S = raw("env_sustain"), R = raw("env_release");
-    const float hold = 400.0f;
-    const float total = juce::jmax(1.0f, A + D + hold + R);
+    const float adr = juce::jmax(1.0f, A + D + R);
     auto yOf = [&](float lvl) { return b.getHeight() - lvl * (b.getHeight() * 0.5f); };
     const float w = b.getWidth();
-    const float xA = A / total * w;
-    const float xD = xA + D / total * w;
-    const float xH = xD + hold / total * w;
-    const float xR = xH + R / total * w;
+    const float holdW = w * 0.18f;
+    const float dynW  = w - holdW;
+    const float xA = A / adr * dynW;
+    const float xD = xA + D / adr * dynW;
+    const float xH = xD + holdW;
+    const float xR = xH + R / adr * dynW;
 
     juce::Path env;
     env.startNewSubPath(0.0f, yOf(0.0f));
@@ -447,15 +454,28 @@ void WindowPanel::paint(juce::Graphics& g)
     g.setColour(megalo::kWhite.withAlpha(0.14f));
     g.fillPath(fill);
 
+    // A/D/S/R handle dots ride on their breakpoints of the curve
+    // (S sits in the middle of the sustain hold, R at the curve end).
+    const juce::Point<float> dots[4] = {
+        { xA,                yOf(1.0f) },
+        { xD,                yOf(S)    },
+        { (xD + xH) * 0.5f,  yOf(S)    },
+        { xR,                yOf(0.0f) }
+    };
+    g.setColour(juce::Colour(0xffffd9a8));
+    for (auto& pt : dots)
+        g.fillEllipse(pt.x - 6.0f, pt.y - 6.0f, 12.0f, 12.0f);
+
     // White midline.
     g.setColour(megalo::kWhite.withAlpha(0.85f));
     g.fillRect(juce::Rectangle<float>(0.0f, mid - 0.5f, b.getWidth(), 1.0f));
 
-    // Faint grouping brackets (WINDOW = sample+skip, GRAIN = grain+xfade).
+    // Faint grouping brackets (WINDOW = sample+skip, GRAIN = size+xfade),
+    // inset from the window's top edge.
     g.setColour(megalo::kWhite.withAlpha(0.55f));
-    g.setFont(megalo::font(7.0f, true));
-    g.drawText("WINDOW", juce::Rectangle<int>(0, 1, getWidth() / 2, 9), juce::Justification::centred, false);
-    g.drawText("GRAIN",  juce::Rectangle<int>(getWidth() / 2, 1, getWidth() / 2, 9), juce::Justification::centred, false);
+    g.setFont(megalo::font(10.0f, true));
+    g.drawText("WINDOW", juce::Rectangle<int>(0, 4, getWidth() / 2, 12), juce::Justification::centred, false);
+    g.drawText("GRAIN",  juce::Rectangle<int>(getWidth() / 2, 4, getWidth() / 2, 12), juce::Justification::centred, false);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -528,7 +548,7 @@ void MegaloEditor::paint(juce::Graphics& g)
 
     // Pitch-engine switch caption (top-right, above the switch).
     g.setColour(megalo::kWhite.withAlpha(0.55f));
-    g.setFont(megalo::font(8.0f, true));
+    g.setFont(megalo::font(10.0f, true));
     g.drawText("PITCH ENGINE", juce::Rectangle<int>(560, 12, 134, 10),
                juce::Justification::centred, false);
 
@@ -541,14 +561,14 @@ void MegaloEditor::paint(juce::Graphics& g)
         g.fillRect(juce::Rectangle<float>(fx, (float) (rulerY + (major ? 0 : 2)), 1.0f, major ? 4.0f : 2.0f));
     }
     g.setColour(megalo::kWhite.withAlpha(0.55f));
-    g.setFont(megalo::font(7.0f, true));
+    g.setFont(megalo::font(9.0f, true));
     const char* labels[6] = { "0", "100", "200", "300", "400", "500 ms" };
     for (int i = 0; i < 6; ++i) {
         const float fx = rulerX + rulerW * (i / 5.0f);
         auto just = (i == 0) ? juce::Justification::left
                   : (i == 5) ? juce::Justification::right
                              : juce::Justification::centred;
-        g.drawText(labels[i], juce::Rectangle<int>((int) fx - 30, rulerY - 9, 60, 9), just, false);
+        g.drawText(labels[i], juce::Rectangle<int>((int) fx - 30, rulerY - 11, 60, 11), just, false);
     }
 
     // Group backgrounds + titles.
@@ -562,7 +582,7 @@ void MegaloEditor::paint(juce::Graphics& g)
         g.setColour(juce::Colours::black.withAlpha(0.18f));
         g.fillRoundedRectangle(r.toFloat(), 6.0f);
         g.setColour(megalo::kOrange);
-        g.setFont(megalo::font(9.0f, true));
+        g.setFont(megalo::font(11.0f, true));
         g.drawText(gr.title, r.getX() + 8, r.getY() + 6, r.getWidth() - 26, 12,
                    juce::Justification::left, false);
     }

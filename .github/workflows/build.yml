@@ -7,6 +7,7 @@ on:
     branches:
       - master
       - claude/lv2-mono-stereo-expansion-vr8cN
+      - claude/exciting-darwin-r1yhi9
     tags: [ 'v*' ]
   pull_request:
     branches: [ master ]
