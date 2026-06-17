@@ -30,17 +30,27 @@ static constexpr int XFADE_MS        = 20;
 static constexpr int RETRIGGER_MS    = 200;
 static constexpr int CAPTURE_FADE_MS = 10;
 
-// Latency-compensation crossfade ("no audio hole").
+// Latency-compensation dry-fill ("no audio hole").
 // When an onset triggers a new freeze, the captured loop is not ready for the
 // whole PendingSkip+Recording window (hundreds of ms). During that gap the wet
 // path is silent (first freeze) or the stale loop fading out, so at full blend
 // the output would drop out. We fill the gap with the live dry signal and then
-// crossfade back to the processed pad once the new loop is ready.
-//   comp = 1 → output forced to dry (live signal); comp = 0 → user blend.
+// hand back to the processed pad once the new loop is ready.
+//
+// Two phases (comp_level = dry-fill amount in [0,1]):
+//   • Gap (comp_target = 1): crossfade output toward the live dry, masking the
+//     stale/silent wet — out = x·comp + mix·(1−comp).
+//   • Recovery (comp_target = 0, loop ready): the pad rises on its OWN envelope
+//     (env_g) and the dry-fill is added on top, receding as env_g climbs —
+//     out = mix + x·blend·comp. The pad is therefore gained by env_g ALONE
+//     (single rise); the earlier code multiplied it by (1−comp) as well, so a
+//     fresh pad attacking from zero was attenuated twice and came out far too
+//     quiet next to the slowly-receding dry. Driving the recede off env_g keeps
+//     the two perfectly complementary.
 static constexpr int COMP_FADE_IN_MS  = 15;   // onset → dry (fast, anti-click)
-static constexpr int COMP_FADE_OUT_MS = 60;   // floor for dry → processed fade
-                                              // (extended to the env attack so a
-                                              //  slow pad swell stays covered)
+static constexpr int COMP_FADE_OUT_MS = 60;   // anti-click floor: fastest the
+                                              // dry-fill may recede (the env
+                                              // attack drives it when slower)
 
 // Stereo width: left/right filter cutoffs are spread by ±this fraction, and
 // the right detune LFO runs anti-phase to the left. Subtle enough to stay
@@ -231,13 +241,15 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
 
     p->envelope.set(env_atk, env_dcy, env_sus, env_rel, sr);
 
-    // Latency-compensation crossfade increments (per sample). The dry fades in
-    // fast on onset (anti-click) and fades back out over at least the envelope
-    // attack, so the live dry covers the whole pad swell — no audible gap.
+    // Latency-compensation dry-fill increments (per sample). On onset the dry
+    // fades in fast (anti-click). On recovery it recedes following the pad's own
+    // attack envelope (env_g) — comp_dn_inc only caps how fast it may drop, so a
+    // very short attack still gets an anti-click fade and a slow pad swell is
+    // tracked sample-for-sample.
     const float comp_up_inc = 1.0f /
         std::max(1.0f, COMP_FADE_IN_MS * 0.001f * sr);
     const float comp_dn_inc = 1.0f /
-        std::max(1.0f, std::max((float)COMP_FADE_OUT_MS, env_atk) * 0.001f * sr);
+        std::max(1.0f, COMP_FADE_OUT_MS * 0.001f * sr);
 
     const double lfo_inc  = static_cast<double>(chorus_rate) / p->sample_rate;
     // det_speed range per sample: base_speed * 2^(±detune_ct/1200).
@@ -290,16 +302,14 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             p->pv1.reset();
             p->pv2.reset();
 #endif
+            // Start the attack from zero so env_g (which drives the dry-fill
+            // recede below) ramps 0→1 cleanly — no step when the prior release
+            // had not fully decayed.
+            p->envelope.reset();
             p->envelope.trigger();
-            // New pad is ready → crossfade from the dry fill back to the blend.
+            // New pad is ready → hand the dry-fill back to the pad's envelope.
             p->comp_target = 0.0f;
         }
-
-        // Ramp the dry-fill amount toward its target (fast up, slow down).
-        if (p->comp_level < p->comp_target)
-            p->comp_level = std::min(p->comp_target, p->comp_level + comp_up_inc);
-        else if (p->comp_level > p->comp_target)
-            p->comp_level = std::max(p->comp_target, p->comp_level - comp_dn_inc);
 
         // LFO
         const double lfo = std::sin(2.0 * M_PI * p->lfo_phase);
@@ -342,8 +352,26 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
         const float env_g = p->envelope.process();
         freeze_sig *= env_g;
 
+        // Update the latency-compensation dry-fill (shared L/R, once per sample).
+        if (p->comp_target > 0.0f) {
+            // Gap: ramp the dry-fill up fast (anti-click).
+            p->comp_level = std::min(1.0f, p->comp_level + comp_up_inc);
+        } else {
+            // Recovery: recede following the pad's own attack (1 − env_g) but no
+            // faster than the anti-click floor. min() latches the fade so a later
+            // decay/release of env_g can't bring the dry-fill back up.
+            p->comp_level = std::min(p->comp_level,
+                std::max(1.0f - env_g, p->comp_level - comp_dn_inc));
+        }
+
+        // Mix the wet (env-shaped pad) with the live dry, then fold in the
+        // dry-fill. Gap: crossfade to dry, masking the stale/silent wet.
+        // Recovery: add the dry-fill on top so the pad is gained by env_g alone
+        // (single rise) while the dry recedes complementarily.
         const float mixL = x * (1.0f - blend) + freeze_sig * blend;
-        outL[i] = soft_clip(x * p->comp_level + mixL * (1.0f - p->comp_level));
+        outL[i] = soft_clip(p->comp_target > 0.0f
+            ? x * p->comp_level + mixL * (1.0f - p->comp_level)
+            : mixL + x * blend * p->comp_level);
 
         if (stereo) {
             // Right channel: independent grain randomisation (decorrelated
@@ -379,7 +407,9 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             freeze_r *= env_g;
 
             const float mixR = x * (1.0f - blend) + freeze_r * blend;
-            outR[i] = soft_clip(x * p->comp_level + mixR * (1.0f - p->comp_level));
+            outR[i] = soft_clip(p->comp_target > 0.0f
+                ? x * p->comp_level + mixR * (1.0f - p->comp_level)
+                : mixR + x * blend * p->comp_level);
         }
     }
 
