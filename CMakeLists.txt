@@ -14,13 +14,15 @@ set(MEGALO_PV_N "2048" CACHE STRING
     "Phase vocoder FFT size — must be a power of 2 (1024 for MOD Dwarf, 2048 for Pi 5)")
 
 option(MEGALO_HN_SYNTH
-    "Enable harmonic+noise additive synthesis (replaces granular/PV on pitched sources)" OFF)
+    "Enable harmonic+noise additive synthesis (replaces granular/PV on pitched sources)" ON)
 option(MEGALO_RAVE
     "Enable RAVE neural synthesis decoder stub (RPi 5 only — requires trained model + ONNX RT)" OFF)
+set(MEGALO_HN_QUALITY "2" CACHE STRING
+    "Polyphonic analysis tier: 0=dwarf (A35), 1=pi5 (A76), 2=desktop")
 
 set(BUNDLE_DIR "${CMAKE_BINARY_DIR}/megaloHN.lv2")
 
-add_library(megalo MODULE src/plugin.cpp)
+add_library(megalo MODULE src/plugin.cpp src/megalo_dsp.cpp)
 
 target_include_directories(megalo PRIVATE ${LV2_INCLUDE_DIRS} src)
 
@@ -43,8 +45,9 @@ else()
 endif()
 
 if(MEGALO_HN_SYNTH)
-    target_compile_definitions(megalo PRIVATE MEGALO_HN_SYNTH)
-    message(STATUS "H+N additive synthesis enabled")
+    target_compile_definitions(megalo PRIVATE
+        MEGALO_HN_SYNTH MEGALO_HN_QUALITY=${MEGALO_HN_QUALITY})
+    message(STATUS "H+N additive synthesis enabled (tier ${MEGALO_HN_QUALITY})")
     if(MEGALO_RAVE)
         target_compile_definitions(megalo PRIVATE MEGALO_RAVE)
         message(STATUS "RAVE stub enabled (RPi 5 — model + ONNX RT required)")
@@ -64,8 +67,16 @@ add_custom_command(TARGET megalo POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
         "${CMAKE_SOURCE_DIR}/megaloHN.lv2/manifest.ttl"
         "${CMAKE_SOURCE_DIR}/megaloHN.lv2/megaloHN.ttl"
+        "${CMAKE_SOURCE_DIR}/megaloHN.lv2/modgui.ttl"
+        "${CMAKE_SOURCE_DIR}/megaloHN.lv2/Choir.ttl"
+        "${CMAKE_SOURCE_DIR}/megaloHN.lv2/Fast.ttl"
+        "${CMAKE_SOURCE_DIR}/megaloHN.lv2/Good.ttl"
+        "${CMAKE_SOURCE_DIR}/megaloHN.lv2/Good_2.ttl"
+        "${CMAKE_SOURCE_DIR}/megaloHN.lv2/Grainy.ttl"
         "${BUNDLE_DIR}/"
-    COMMENT "Copying TTL files to bundle"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/megaloHN.lv2/modgui" "${BUNDLE_DIR}/modgui"
+    COMMENT "Copying TTL + modgui files to bundle"
 )
 
 install(DIRECTORY "${BUNDLE_DIR}"

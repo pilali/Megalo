@@ -1,0 +1,86 @@
+@prefix atom: <http://lv2plug.in/ns/ext/atom#> .
+@prefix lv2: <http://lv2plug.in/ns/lv2core#> .
+@prefix pset: <http://lv2plug.in/ns/ext/presets#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix state: <http://lv2plug.in/ns/ext/state#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<Fast.ttl>
+	a pset:Preset ;
+	lv2:appliesTo <https://github.com/pilali/megalo/hn> ;
+	rdfs:label "Fast" ;
+	lv2:port [
+		lv2:symbol "attack_skip_ms" ;
+		pset:value 10.0
+	] , [
+		lv2:symbol "base_pitch" ;
+		pset:value 0.0
+	] , [
+		lv2:symbol "blend" ;
+		pset:value 0.99553603
+	] , [
+		lv2:symbol "chorus_rate" ;
+		pset:value 1.823717
+	] , [
+		lv2:symbol "detune_blend" ;
+		pset:value 0.0
+	] , [
+		lv2:symbol "detune_cents" ;
+		pset:value 28.0970974
+	] , [
+		lv2:symbol "detune_enable" ;
+		pset:value 0.0
+	] , [
+		lv2:symbol "env_attack" ;
+		pset:value 0.0
+	] , [
+		lv2:symbol "env_decay" ;
+		pset:value 200.0
+	] , [
+		lv2:symbol "env_release" ;
+		pset:value 2327.0090332
+	] , [
+		lv2:symbol "env_sustain" ;
+		pset:value 1.0
+	] , [
+		lv2:symbol "filter_cutoff" ;
+		pset:value 20.0
+	] , [
+		lv2:symbol "filter_q" ;
+		pset:value 0.1
+	] , [
+		lv2:symbol "filter_type" ;
+		pset:value 1.0
+	] , [
+		lv2:symbol "grain_size_ms" ;
+		pset:value 100.1060257
+	] , [
+		lv2:symbol "grain_xfade_ms" ;
+		pset:value 32.83203125
+	] , [
+		lv2:symbol "onset_threshold" ;
+		pset:value 0.06529
+	] , [
+		lv2:symbol "pitch1_enable" ;
+		pset:value 0.0
+	] , [
+		lv2:symbol "pitch1_level" ;
+		pset:value 0.006138
+	] , [
+		lv2:symbol "pitch1_semi" ;
+		pset:value -12.0
+	] , [
+		lv2:symbol "pitch2_enable" ;
+		pset:value 0.0
+	] , [
+		lv2:symbol "pitch2_level" ;
+		pset:value 0.0
+	] , [
+		lv2:symbol "pitch2_semi" ;
+		pset:value 12.0
+	] , [
+		lv2:symbol "sample_ms" ;
+		pset:value 130.0
+	] .
+

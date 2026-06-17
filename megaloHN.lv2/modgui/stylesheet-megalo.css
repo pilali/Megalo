@@ -1,0 +1,608 @@
+/* ============================================================
+   MEGALO — custom modgui stylesheet
+   Layout: dark-gray rectangular panel, wider than tall.
+   Center orange "scope" window with handles + waveform.
+   Knobs/switches row underneath.
+   ============================================================ */
+
+@import url(/fonts/nexa/stylesheet.css);
+@import url(/fonts/questrial/stylesheet.css);
+
+/* ── Panel ──────────────────────────────────────────────── */
+.megalo-panel{{{cns}}} {
+    background: #25282c;
+    border-radius: 14px;
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.05),
+        inset 0 -2px 8px rgba(0,0,0,0.4),
+        0 4px 18px rgba(0,0,0,0.45);
+    color: #fff;
+    font-family: "Nexa", "Questrial", sans-serif;
+    height: 380px;
+    position: absolute;
+    width: 720px;
+    overflow: hidden;
+}
+
+/* ── MEGALO brand / master bypass ──────────────────────── */
+/* All interactive zones in this template sit at z-index >= 30 so they
+   land above .mod-pedal .mod-drag-handle (z-index:20 in MOD-UI core),
+   which otherwise blankets the whole panel and swallows clicks. */
+.megalo-panel{{{cns}}} .megalo-logo {
+    cursor: pointer;
+    left: 26px;
+    position: absolute;
+    top: 18px;
+    user-select: none;
+    z-index: 30;
+}
+
+.megalo-panel{{{cns}}} .megalo-logo-text {
+    color: #f0801a;
+    display: inline-block;
+    font-family: "Nexa", sans-serif;
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    line-height: 1;
+    text-transform: uppercase;
+    text-shadow: 0 0 18px rgba(240,128,26,0.35);
+    transition: color 120ms ease, text-shadow 120ms ease;
+}
+
+/* Bypass light element stays present (MOD-UI toggles its `on` class)
+   but we don't show it directly — we use :has() to swap the logo color. */
+.megalo-panel{{{cns}}} .megalo-logo-light {
+    display: inline-block;
+    height: 0;
+    width: 0;
+}
+
+/* When the plugin is BYPASSED (disabled), MOD-UI removes the `on` class
+   from the bypass-light. So `.on` present → enabled (orange).
+   Absent → disabled (white). */
+.megalo-panel{{{cns}}} .megalo-logo:has(.megalo-logo-light:not(.on)) .megalo-logo-text {
+    color: #ffffff;
+    text-shadow: 0 0 12px rgba(255,255,255,0.25);
+}
+
+/* ── Central orange window ──────────────────────────────── */
+.megalo-panel{{{cns}}} .megalo-window {
+    background: #f0801a;
+    border-radius: 8px;
+    box-shadow:
+        inset 0 0 0 1px rgba(0,0,0,0.25),
+        inset 0 0 30px rgba(0,0,0,0.18);
+    height: 170px;
+    left: 26px;
+    position: absolute;
+    right: 26px;
+    top: 60px;
+    overflow: hidden;
+    z-index: 30;
+}
+
+/* Stylised audio waveform, dark gray to match panel.
+   pointer-events:none — purely decorative, must not eat clicks aimed
+   at the handles and threshold layered above. */
+.megalo-panel{{{cns}}} .megalo-waveform {
+    height: 100%;
+    left: 0;
+    pointer-events: none;
+    position: absolute;
+    top: 0;
+    width: 100%;
+}
+
+/* White axis line — spans the whole panel at orange window mid-height */
+.megalo-panel{{{cns}}} .megalo-window::after {
+    background: #ffffff;
+    content: "";
+    height: 1px;
+    left: -26px;          /* extend past the window left edge to panel edge */
+    opacity: 0.85;
+    position: absolute;
+    right: -26px;         /* and right edge */
+    top: 50%;
+    z-index: 3;
+}
+
+/* Onset threshold: thin orange-tinted horizontal line, draggable vertically */
+.megalo-panel{{{cns}}} .megalo-threshold {
+    background: rgba(255,255,255,0.55);
+    border-top: 1px dashed rgba(255,255,255,0.85);
+    cursor: ns-resize;
+    height: 6px;             /* small grab area; the visible line is the border */
+    left: 0;
+    position: absolute;
+    right: 0;
+    /* top is set by --value (0..1, distance from window bottom) */
+    top: calc((1 - var(--value, 0.5)) * 100%);
+    z-index: 4;
+}
+
+/* Onset trigger flash — JS toggles .triggered when the plugin's
+   trigger_pulse output goes high. The animation pulses the line
+   orange then fades back. */
+.megalo-panel{{{cns}}} .megalo-threshold.triggered {
+    animation: megalo-onset-flash 0.35s ease-out;
+}
+@keyframes megalo-onset-flash {
+    0%   { background: rgba(240,128,26,0.95);
+           border-top-color: #fff2cc;
+           box-shadow: 0 0 18px 4px rgba(240,128,26,0.7); }
+    60%  { background: rgba(240,128,26,0.4);
+           border-top-color: rgba(255,255,255,0.9);
+           box-shadow: 0 0 6px 1px rgba(240,128,26,0.3); }
+    100% { background: rgba(255,255,255,0.55);
+           border-top-color: rgba(255,255,255,0.85);
+           box-shadow: none; }
+}
+
+.megalo-panel{{{cns}}} .megalo-threshold::before {
+    background: rgba(255,255,255,0.9);
+    border-radius: 50%;
+    content: "";
+    height: 8px;
+    left: 8px;
+    position: absolute;
+    top: -4px;
+    width: 8px;
+}
+
+/* ── Handle rows (top = sample/grain, bottom = envelope) ── */
+.megalo-panel{{{cns}}} .megalo-handles {
+    display: flex;
+    justify-content: stretch;
+    left: 0;
+    position: absolute;
+    right: 0;
+    z-index: 5;
+}
+
+.megalo-panel{{{cns}}} .megalo-handles-top {
+    height: 50%;
+    top: 0;
+}
+
+.megalo-panel{{{cns}}} .megalo-handles-bottom {
+    bottom: 0;
+    height: 50%;
+}
+
+/* ── Individual handle ────────────────────────────────────
+   Each handle takes an equal share of the row so the click
+   target spans the full slot, not just the 2px track. The
+   track + knob remain centered horizontally inside it. */
+.megalo-panel{{{cns}}} .megalo-handle {
+    cursor: ns-resize;
+    flex: 1 1 0;
+    height: 100%;
+    min-width: 0;
+    position: relative;
+}
+
+/* MOD-UI registration element. We DON'T want MOD-UI to capture drag here
+   (its rotation transform would spin the handle visuals). pointer-events:
+   none lets clicks fall through to .megalo-handle, whose mousedown is
+   wired in script-megalo.js to drive value updates manually. */
+.megalo-panel{{{cns}}} .megalo-hit {
+    bottom: 0;
+    left: 0;
+    opacity: 0;
+    position: absolute;
+    right: 0;
+    top: 0;
+}
+
+.megalo-panel{{{cns}}} .megalo-hit-passive {
+    pointer-events: none;
+}
+
+/* ── Top handles: time-domain markers, horizontal drag ────
+   The vertical line spans the full height of the slot but
+   slides LEFT/RIGHT inside it based on --value. The circle
+   handle sits on top of the line and moves with it. */
+.megalo-panel{{{cns}}} .megalo-handles-top .megalo-handle {
+    cursor: ew-resize;
+}
+
+.megalo-panel{{{cns}}} .megalo-handles-top .megalo-handle-track {
+    background: rgba(255,255,255,0.35);
+    height: 100%;
+    left: calc(var(--value, 0.5) * (100% - 2px));
+    pointer-events: none;
+    position: absolute;
+    top: 0;
+    width: 2px;
+}
+
+/* Knob is centered on the 2px track line (same left formula as the
+   track plus half the line width) and vertically centered in the slot. */
+.megalo-panel{{{cns}}} .megalo-handles-top .megalo-handle-knob {
+    background: rgba(255,255,255,0.95);
+    border-radius: 50%;
+    box-shadow: 0 0 8px rgba(255,255,255,0.35);
+    height: 12px;
+    left: calc(var(--value, 0.5) * (100% - 2px) + 1px);
+    pointer-events: none;
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    transition: box-shadow 120ms ease;
+    width: 12px;
+    z-index: 1;
+}
+
+/* ── Bottom handles: ADSR, vertical drag ────────────────
+   Per-column track is hidden — the envelope SVG curve
+   below provides the visual continuity instead. */
+.megalo-panel{{{cns}}} .megalo-handles-bottom .megalo-handle-track {
+    display: none;
+}
+
+/* ── ADSR envelope curve ────────────────────────────────
+   Y axis: 0 = midline (idle), 100 = peak amplitude
+   X axis: 0..1000 proportional to A+D+hold+R durations */
+.megalo-panel{{{cns}}} .megalo-envelope {
+    bottom: 0;
+    height: 100%;
+    left: 0;
+    pointer-events: none;
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 100%;
+    z-index: 0;
+}
+
+.megalo-panel{{{cns}}} .megalo-env-fill {
+    fill: rgba(255,255,255,0.14);
+    stroke: none;
+}
+
+.megalo-panel{{{cns}}} .megalo-env-line {
+    fill: none;
+    stroke: rgba(255,255,255,0.85);
+    stroke-linejoin: round;
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+}
+
+/* ADSR knobs ride ON the envelope curve: left/top are written by
+   updateEnvelope() in script-megalo.js (percentages local to each
+   column) so each dot sits on its breakpoint of the curve. */
+.megalo-panel{{{cns}}} .megalo-handles-bottom .megalo-handle-knob {
+    background: rgba(255,255,255,0.95);
+    border-radius: 50%;
+    box-shadow: 0 0 8px rgba(255,255,255,0.35);
+    height: 12px;
+    left: 50%;
+    pointer-events: none;
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    transition: box-shadow 120ms ease;
+    width: 12px;
+    z-index: 1;
+}
+
+.megalo-panel{{{cns}}} .megalo-handle:hover .megalo-handle-knob {
+    box-shadow: 0 0 14px rgba(255,255,255,0.9);
+}
+
+/* ── Mini live readouts under each handle label ──────── */
+.megalo-panel{{{cns}}} .megalo-handle-value {
+    color: rgba(255,255,255,0.62);
+    display: block;
+    font-family: "Questrial", sans-serif;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    pointer-events: none;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.megalo-panel{{{cns}}} .megalo-handles-top .megalo-handle-label,
+.megalo-panel{{{cns}}} .megalo-handles-top .megalo-handle-value {
+    left: 50%;
+    position: absolute;
+    transform: translateX(-50%);
+}
+
+.megalo-panel{{{cns}}} .megalo-handles-bottom .megalo-handle-label,
+.megalo-panel{{{cns}}} .megalo-handles-bottom .megalo-handle-value {
+    left: 50%;
+    position: absolute;
+    transform: translateX(-50%);
+}
+.megalo-panel{{{cns}}} .megalo-handles-bottom .megalo-handle-label  { bottom: 14px; }
+.megalo-panel{{{cns}}} .megalo-handles-bottom .megalo-handle-value  { bottom: 2px; }
+
+/* Threshold readout: small text aligned to the right edge */
+.megalo-panel{{{cns}}} .megalo-threshold-value {
+    color: rgba(255,255,255,0.85);
+    font-family: "Questrial", sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    pointer-events: none;
+    position: absolute;
+    right: 4px;
+    top: -13px;
+}
+
+/* ── Time-axis ruler above the orange window ──────────
+   Decorative scale (0..500 ms) signalling "this is the
+   time axis" of the upper half. Sits in the dark gap
+   between the logo row and the orange window. */
+.megalo-panel{{{cns}}} .megalo-timescale {
+    height: 12px;
+    left: 26px;
+    pointer-events: none;
+    position: absolute;
+    right: 26px;
+    top: 46px;
+    z-index: 7;
+}
+.megalo-panel{{{cns}}} .megalo-timescale-tick {
+    background: rgba(255,255,255,0.5);
+    bottom: 0;
+    height: 4px;
+    position: absolute;
+    width: 1px;
+}
+.megalo-panel{{{cns}}} .megalo-timescale-tick.minor {
+    background: rgba(255,255,255,0.22);
+    height: 2px;
+}
+.megalo-panel{{{cns}}} .megalo-timescale-label {
+    color: rgba(255,255,255,0.55);
+    font-family: "Questrial", sans-serif;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+.megalo-panel{{{cns}}} .megalo-timescale-label.start { transform: translateX(0); }
+.megalo-panel{{{cns}}} .megalo-timescale-label.end   { transform: translateX(-100%); }
+
+/* Window stays at its original top:60px — timescale sits in the gap above. */
+
+/* ── Functional grouping brackets above the top row ──── */
+.megalo-panel{{{cns}}} .megalo-brackets {
+    height: 15px;
+    left: 0;
+    pointer-events: none;
+    position: absolute;
+    right: 0;
+    top: -1px;
+    z-index: 6;
+}
+
+.megalo-panel{{{cns}}} .megalo-bracket {
+    border-left:  1px solid rgba(255,255,255,0.35);
+    border-right: 1px solid rgba(255,255,255,0.35);
+    border-top:   1px solid rgba(255,255,255,0.35);
+    box-sizing: border-box;
+    color: rgba(255,255,255,0.6);
+    font-family: "Nexa", sans-serif;
+    font-size: 10px;
+    font-weight: 800;
+    height: 100%;
+    letter-spacing: 0.16em;
+    padding-top: 3px;       /* keep the caption clear of the window edge */
+    position: absolute;
+    text-align: center;
+    text-transform: uppercase;
+}
+/* Push the top-handle label/value down so the bracket on top
+   has clear room. */
+.megalo-panel{{{cns}}} .megalo-handles-top .megalo-handle-label { top: 15px; }
+.megalo-panel{{{cns}}} .megalo-handles-top .megalo-handle-value { top: 27px; }
+
+/* ── Live drag tooltip ──────────────────────────────── */
+.megalo-panel{{{cns}}} .megalo-tooltip {
+    background: rgba(15,15,16,0.92);
+    border: 1px solid rgba(240,128,26,0.4);
+    border-radius: 3px;
+    color: #fff;
+    display: none;
+    font-family: "Questrial", sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    left: 0;
+    padding: 2px 7px;
+    pointer-events: none;
+    position: fixed;
+    top: 0;
+    white-space: nowrap;
+    z-index: 9999;
+}
+
+/* Subtle tint differences to group handles visually */
+.megalo-panel{{{cns}}} .megalo-handle-sample .megalo-handle-knob {
+    background: #fff5e6;
+}
+.megalo-panel{{{cns}}} .megalo-handle-grain .megalo-handle-knob {
+    background: #ffe1bf;
+}
+.megalo-panel{{{cns}}} .megalo-handle-env .megalo-handle-knob {
+    background: #ffd9a8;
+}
+
+/* Handle label — small text above/below the handle column */
+.megalo-panel{{{cns}}} .megalo-handle-label {
+    color: rgba(255,255,255,0.9);
+    font-size: 11px;
+    font-weight: 700;
+    left: 50%;
+    letter-spacing: 0.1em;
+    pointer-events: none;
+    position: absolute;
+    text-transform: uppercase;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+
+/* Vertical offsets for these labels live in the handle-row section
+   above (top: 13px / bottom: 14px) so they clear the brackets and
+   the value readouts. */
+
+/* ── Bottom controls row ────────────────────────────────── */
+.megalo-panel{{{cns}}} .megalo-controls {
+    bottom: 12px;
+    display: flex;
+    gap: 8px;
+    justify-content: space-between;
+    left: 26px;
+    position: absolute;
+    right: 26px;
+    top: 245px;
+    z-index: 30;
+}
+
+.megalo-panel{{{cns}}} .megalo-group {
+    background: rgba(0,0,0,0.18);
+    border-radius: 6px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+    flex: 1 1 auto;
+    padding: 6px 8px 4px;
+}
+
+.megalo-panel{{{cns}}} .megalo-group-head {
+    align-items: center;
+    display: flex;
+    height: 14px;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.megalo-panel{{{cns}}} .megalo-group-title {
+    color: #f0801a;
+    font-family: "Nexa", sans-serif;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.megalo-panel{{{cns}}} .megalo-group-body {
+    align-items: center;
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+}
+
+/* ── Knobs ──────────────────────────────────────────────────
+   AIDA-X pattern: mod-role lives on .megalo-knob-dial. MOD-UI
+   applies `transform: rotate(Xdeg)` directly to the dial when
+   the value changes, spinning dial and its child pointer. We
+   do NOT compute any rotation in JS. */
+.megalo-panel{{{cns}}} .megalo-knob {
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+    width: 42px;
+}
+
+.megalo-panel{{{cns}}} .megalo-knob-dial {
+    background: radial-gradient(circle at 30% 30%, #4a4f55 0%, #2a2d31 80%);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 50%;
+    box-shadow:
+        inset 0 -2px 4px rgba(0,0,0,0.5),
+        inset 0 1px 1px rgba(255,255,255,0.08),
+        0 1px 2px rgba(0,0,0,0.4);
+    cursor: ns-resize;
+    height: 34px;
+    position: relative;
+    transform-origin: 50% 50%;
+    width: 34px;
+}
+
+/* Pointer is a fixed line at the top of the dial; the dial's rotation
+   carries it around. No custom rotation here. */
+.megalo-panel{{{cns}}} .megalo-knob-pointer {
+    background: #f0801a;
+    border-radius: 1px;
+    box-shadow: 0 0 4px rgba(240,128,26,0.6);
+    height: 12px;
+    left: 50%;
+    pointer-events: none;
+    position: absolute;
+    top: 3px;
+    transform: translateX(-50%);
+    width: 2px;
+}
+
+.megalo-panel{{{cns}}} .megalo-knob-label {
+    color: rgba(255,255,255,0.7);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    margin-top: 2px;
+    text-transform: uppercase;
+}
+
+/* ── LED toggles (enable/disable per section) ───────────── */
+.megalo-panel{{{cns}}} .megalo-led {
+    background: #2a2d31;
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 50%;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.6);
+    cursor: pointer;
+    height: 10px;
+    transition: background 120ms ease, box-shadow 120ms ease;
+    width: 10px;
+}
+
+/* switchWidget toggles .on / .off natively when value changes */
+.megalo-panel{{{cns}}} .megalo-led.on {
+    background: #f0801a;
+    box-shadow:
+        0 0 8px rgba(240,128,26,0.85),
+        inset 0 0 4px rgba(255,180,80,0.7);
+}
+
+/* ── 3-position filter type switch ──────────────────────── */
+.megalo-panel{{{cns}}} .megalo-switch3 {
+    background: #1d2024;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 4px;
+    display: flex;
+    height: 22px;
+    margin-top: 10px;
+    overflow: hidden;
+    position: relative;
+}
+
+.megalo-panel{{{cns}}} .megalo-switch3-opt {
+    align-items: center;
+    color: rgba(255,255,255,0.5);
+    cursor: pointer;
+    display: flex;
+    font-size: 11px;
+    font-weight: 700;
+    justify-content: center;
+    letter-spacing: 0.06em;
+    transition: background 120ms ease, color 120ms ease;
+    width: 24px;
+}
+
+.megalo-panel{{{cns}}} .megalo-switch3-opt:hover {
+    color: rgba(255,255,255,0.85);
+}
+
+.megalo-panel{{{cns}}} .megalo-switch3-opt.active {
+    background: #f0801a;
+    color: #25282c;
+}
+
+/* Audio I/O jacks are siblings of the panel — MOD-UI core CSS
+   positions them outside the box (left:-88px / right:-87px) at z-index:30.
+   We don't override anything here. */

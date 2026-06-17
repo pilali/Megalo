@@ -1,0 +1,57 @@
+name: build
+
+on:
+  push:
+    # JUCE has been merged into master; build there plus active feature
+    # branches. (The old `JUCE` branch no longer exists.)
+    branches:
+      - master
+      - claude/lv2-mono-stereo-expansion-vr8cN
+      - claude/exciting-darwin-r1yhi9
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+# Collapse redundant runs for the same branch. A branch with an open PR
+# fires both `push` and `pull_request`; normalising the group to the head
+# branch name (push → ref_name, PR → head.ref) lets the two cancel each
+# other, and a new commit supersedes an in-flight build.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (universal)
+        run: cmake -B juce/build -S juce -DCMAKE_BUILD_TYPE=Release
+             -DCOPY_AFTER_BUILD=OFF -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+      - name: Build
+        run: cmake --build juce/build --config Release --parallel
+      - name: Verify universal binary
+        run: lipo -info "juce/build/Megalo_artefacts/Release/AU/Megalo.component/Contents/MacOS/Megalo" || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Megalo-macOS-universal
+          path: |
+            juce/build/Megalo_artefacts/Release/AU/Megalo.component
+            juce/build/Megalo_artefacts/Release/VST3/Megalo.vst3
+            juce/build/Megalo_artefacts/Release/Standalone/Megalo.app
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -B juce/build -S juce -DCMAKE_BUILD_TYPE=Release -DCOPY_AFTER_BUILD=OFF
+      - name: Build
+        run: cmake --build juce/build --config Release --parallel
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Megalo-Windows
+          path: |
+            juce/build/Megalo_artefacts/Release/VST3/Megalo.vst3
+            juce/build/Megalo_artefacts/Release/Standalone/Megalo.exe

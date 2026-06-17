@@ -3,97 +3,108 @@
 #include <cstring>
 #include <algorithm>
 
-// Granular looper — converts a frozen loop into a smooth, evolving pad.
+// Grain player — pad synthesis from a frozen loop via randomised granular
+// synthesis with configurable crossfade.
 //
-// Six Hann-windowed grains run simultaneously with staggered phases.
-// A global playhead advances through the loop at 1 sample/sample.
-// When a grain finishes it respawns near the playhead (±JITTER × grain size),
-// which preserves pitch coherence while adding subtle textural variation.
+// Four independent voices play simultaneously, each reading from a
+// randomly chosen position in the loop and applying a trapezoidal
+// amplitude envelope (cosine fade-in + flat top + cosine fade-out).
+// On completion every voice draws a new random start position, so
+// consecutive grains are unrelated in phase → no audible repetition.
 //
-// Contrast with fully-random positions (the previous approach): grains
-// scattered across the whole loop produce random phase relationships that
-// partially cancel on harmonic content, causing amplitude instability.
-//
-// Normalisation: N evenly-staggered Hann windows sum to N/2, so we
-// multiply by 2/N to restore unity gain.
+// Voices are initialised with staggered cursors so the output is at
+// steady state from the very first sample.  Normalisation: 1/N_VOICES.
 
-class GranularLooper {
+class GrainPlayer {
 public:
-    static constexpr int N_GRAINS = 6;
+    static constexpr int N_VOICES = 4;
 
-    void reset() noexcept {
-        _initialized = false;
-        _playhead    = 0.0f;
-        // Keep _rand so successive resets don't produce identical textures.
-    }
+    void reset() noexcept { _init = false; }
 
-    // Returns one synthesised output sample.
-    // grain_samples : clamped to [64, loop_len] internally
-    // scatter       : jitter radius as a fraction of grain size [0.0 – 1.0]
-    // speed         : loop read speed (1.0 = normal, 2.0 = +1 oct, 0.5 = −1 oct)
+    // Re-seed the RNG stream. Used to decorrelate the right-channel grain
+    // cloud from the left so the stereo image is wide. Call once at setup;
+    // the stream then evolves independently across resets.
+    void seed(uint32_t s) noexcept { _rand = s; }
+
+    // loop         : frozen loop buffer (nullptr / len=0 → silent)
+    // grain_samples: grain duration  [16, loop_len]
+    // xfade_samples: cosine fade length at each end  [8, grain_samples/2]
+    // speed        : loop read speed per cursor step (1.0 = normal pitch)
     float process(const float* loop, int loop_len,
-                  int grain_samples, float scatter, float speed) noexcept {
+                  int grain_samples, int xfade_samples,
+                  float speed) noexcept {
         if (!loop || loop_len == 0) return 0.0f;
-        grain_samples = std::clamp(grain_samples, 64, loop_len);
-        scatter       = std::clamp(scatter, 0.0f, 1.0f);
+
+        xfade_samples = std::clamp(xfade_samples, 8, loop_len / 4);
+        grain_samples = std::clamp(grain_samples, xfade_samples * 2 + 8, loop_len);
         speed         = std::clamp(speed, 0.25f, 4.0f);
 
-        if (!_initialized) {
-            const int hop = grain_samples / N_GRAINS;
-            for (int k = 0; k < N_GRAINS; ++k) {
-                // Distribute starting positions evenly around the loop so
-                // grains are immediately at steady-state coverage.
-                _grains[k].start  = (float)k * (float)loop_len / (float)N_GRAINS;
-                _grains[k].cursor = k * hop;   // stagger Hann phases
-                _grains[k].len    = grain_samples;
+        if (!_init) {
+            const int hop = grain_samples / N_VOICES;
+            for (int k = 0; k < N_VOICES; ++k) {
+                _v[k].pos       = _rand01() * (float)loop_len;
+                _v[k].cursor    = k * hop;          // stagger for steady state
+                _v[k].grain_len = grain_samples;
+                _v[k].xfade_len = xfade_samples;
             }
-            _playhead    = 0.0f;
-            _initialized = true;
+            _init = true;
         }
 
         float out = 0.0f;
-        for (int k = 0; k < N_GRAINS; ++k) {
-            Grain& g = _grains[k];
-            g.len = grain_samples;   // track knob changes
+        for (int k = 0; k < N_VOICES; ++k) {
+            Voice& v      = _v[k];
+            v.grain_len   = grain_samples;
+            v.xfade_len   = xfade_samples;
 
-            // Hann window at current cursor position
-            const float t      = (float)g.cursor / (float)(g.len - 1);
-            const float window = 0.5f * (1.0f - std::cos(2.0f * 3.14159265f * t));
+            // Trapezoidal cosine amplitude envelope
+            out += _read(loop, loop_len, v, speed) * _amp(v);
 
-            // Loop read position advances at `speed` per cursor step — this
-            // is what shifts the pitch without touching the Hann window duration.
-            float lp = g.start + (float)g.cursor * speed;
-            lp -= (float)loop_len * std::floor(lp / (float)loop_len);
-            const int   i0   = (int)lp;
-            const int   i1   = (i0 + 1) % loop_len;
-            const float frac = lp - (float)i0;
-            out += (loop[i0] + frac * (loop[i1] - loop[i0])) * window;
-
-            if (++g.cursor >= g.len) {
-                g.cursor = 0;
-                // Respawn near the global playhead; scatter controls blur vs. coherence.
-                const float jitter = _rand_bipolar() * (float)grain_samples * scatter;
-                g.start = _playhead + jitter;
-                g.start -= (float)loop_len * std::floor(g.start / (float)loop_len);
+            if (++v.cursor >= v.grain_len) {
+                v.cursor = 0;
+                v.pos    = _rand01() * (float)loop_len;  // truly random respawn
             }
         }
 
-        _playhead += speed;
-        if (_playhead >= (float)loop_len) _playhead -= (float)loop_len;
-
-        return out * (2.0f / (float)N_GRAINS);
+        return out * (1.0f / (float)N_VOICES);
     }
 
 private:
-    struct Grain { float start = 0.0f; int cursor = 0; int len = 1; };
+    struct Voice {
+        float pos       = 0.0f;
+        int   cursor    = 0;
+        int   grain_len = 1;
+        int   xfade_len = 8;
+    };
 
-    float _rand_bipolar() noexcept {
-        _rand = _rand * 1664525u + 1013904223u;
-        return (float)(int32_t(_rand >> 16) - 32768) * (1.0f / 32768.0f);
+    // Cosine fade-in → flat top → cosine fade-out
+    static float _amp(const Voice& v) noexcept {
+        const int c = v.cursor;
+        const int g = v.grain_len;
+        const int x = v.xfade_len;
+        if (c < x)
+            return 0.5f * (1.0f - std::cos(3.14159265f * (float)c / (float)x));
+        if (c >= g - x)
+            return 0.5f * (1.0f - std::cos(3.14159265f * (float)(g - c) / (float)x));
+        return 1.0f;
     }
 
-    Grain    _grains[N_GRAINS] = {};
-    float    _playhead         = 0.0f;
-    uint32_t _rand             = 12345u;
-    bool     _initialized      = false;
+    // Linear-interpolated read at pos + cursor*speed, wrapped into loop.
+    static float _read(const float* loop, int loop_len,
+                       const Voice& v, float speed) noexcept {
+        float lp = v.pos + (float)v.cursor * speed;
+        lp -= (float)loop_len * std::floor(lp / (float)loop_len);
+        const int   i0   = (int)lp;
+        const int   i1   = (i0 + 1) % loop_len;
+        const float frac = lp - (float)i0;
+        return loop[i0] + frac * (loop[i1] - loop[i0]);
+    }
+
+    float _rand01() noexcept {
+        _rand = _rand * 1664525u + 1013904223u;
+        return (float)(_rand >> 16) / 65535.0f;
+    }
+
+    Voice    _v[N_VOICES] = {};
+    uint32_t _rand        = 12345u;
+    bool     _init        = false;
 };
