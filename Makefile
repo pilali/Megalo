@@ -24,6 +24,8 @@ ifeq ($(TARGET),rpi5)
     EXTRA_DEFS = -DMEGALO_PHASE_VOCODER -DMEGALO_PV_N=2048
 
 else ifeq ($(TARGET),moddwarf-new)
+    # MOD Dwarf — Cortex-A35, the most constrained target. Granular-only pitch
+    # path (no phase vocoder) and the conservative polyphony tier.
     # mod-plugin-builder injects CXX and CXXFLAGS via command-line args.
     # Use ?= so those take precedence; fallbacks serve only for manual builds.
     CXX      ?= aarch64-modaudio-linux-gnu-g++
@@ -31,6 +33,16 @@ else ifeq ($(TARGET),moddwarf-new)
                 -mcpu=cortex-a35 \
                 -fvisibility=hidden -Wall -Wextra -Wno-unused-parameter
     EXTRA_DEFS = -DMEGALO_PV_N=1024
+
+else ifeq ($(TARGET),modduox-new)
+    # MOD Duo X — quad Cortex-A53 (ARMv8-A). No Dwarf restrictions: full
+    # features like the Pi 5 / desktop builds (phase vocoder + pi5 polyphony
+    # tier; see the quality-tier block below).
+    CXX      ?= aarch64-modaudio-linux-gnu-g++
+    CXXFLAGS ?= -std=c++17 -O3 -ffast-math \
+                -mcpu=cortex-a53 \
+                -fvisibility=hidden -Wall -Wextra -Wno-unused-parameter
+    EXTRA_DEFS = -DMEGALO_PHASE_VOCODER -DMEGALO_PV_N=2048
 
 else  # native
     CXX      ?= g++
@@ -49,9 +61,11 @@ endif
 
 # ── Polyphonic analysis quality tier ───────────────────────────────────────
 # MEGALO_HN_QUALITY = dwarf | pi5 | desktop  (FFT size, max notes/partials).
-# Defaults follow the target: Dwarf→dwarf, rpi5→pi5, native→desktop.
+# Defaults follow the target: Dwarf→dwarf, Duo X / rpi5→pi5, native→desktop.
 ifeq ($(TARGET),moddwarf-new)
     MEGALO_HN_QUALITY ?= dwarf
+else ifeq ($(TARGET),modduox-new)
+    MEGALO_HN_QUALITY ?= pi5
 else ifeq ($(TARGET),rpi5)
     MEGALO_HN_QUALITY ?= pi5
 else
