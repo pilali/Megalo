@@ -21,8 +21,6 @@ function (event, funcs) {
         onset_threshold: { kind: 'ratio'    },
         sample_ms:       { kind: 'ms'       },
         attack_skip_ms:  { kind: 'ms'       },
-        grain_size_ms:   { kind: 'ms'       },
-        grain_xfade_ms:  { kind: 'ms'       },
         env_attack:      { kind: 'ms-long'  },
         env_decay:       { kind: 'ms-long'  },
         env_sustain:     { kind: 'ratio'    },

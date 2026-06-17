@@ -364,10 +364,11 @@ void ThresholdLine::paint(juce::Graphics& g)
 // ════════════════════════════════════════════════════════════════════════════
 WindowPanel::WindowPanel(APVTS& a) : threshold(a, "onset_threshold"), apvts(a)
 {
+    // Grain Size / Crossfade are granular-only; the polyphonic H+N engine
+    // ignores them (they still drive the granular fallback for non-pitched
+    // input, so the LV2 ports/parameters are kept — just not surfaced here).
     topHandles.add(new TimeHandle(a, "sample_ms",      "SAMPLE", juce::Colour(0xfffff5e6)));
     topHandles.add(new TimeHandle(a, "attack_skip_ms", "SKIP",   juce::Colour(0xfffff5e6)));
-    topHandles.add(new TimeHandle(a, "grain_size_ms",  "SIZE",   juce::Colour(0xffffe1bf)));
-    topHandles.add(new TimeHandle(a, "grain_xfade_ms", "XFADE",  juce::Colour(0xffffe1bf)));
     for (auto* h : topHandles) addAndMakeVisible(h);
 
     envHandles.add(new EnvHandle(a, "env_attack",  "A"));
@@ -385,8 +386,10 @@ void WindowPanel::resized()
     const int halfH = b.getHeight() / 2;
     const int colW  = b.getWidth() / 4;
 
+    // Top handles spread across the full width (count varies with the engine).
+    const int topColW = b.getWidth() / juce::jmax(1, topHandles.size());
     for (int i = 0; i < topHandles.size(); ++i)
-        topHandles[i]->setBounds(i * colW, 0, colW, halfH);
+        topHandles[i]->setBounds(i * topColW, 0, topColW, halfH);
     for (int i = 0; i < envHandles.size(); ++i)
         envHandles[i]->setBounds(i * colW, halfH, colW, b.getHeight() - halfH);
 

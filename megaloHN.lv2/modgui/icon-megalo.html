@@ -63,12 +63,12 @@
                  mod-widget-rotation="270"></div>
         </div>
 
-        <!-- Functional grouping brackets for the top row.
-             WINDOW = SAMPLE + SKIP (capture window definition).
-             GRAIN  = GRAIN  + XFADE (granular playback behavior). -->
+        <!-- Functional grouping bracket for the top row.
+             WINDOW = SAMPLE + SKIP (capture window definition). The granular
+             GRAIN/XFADE handles are not surfaced: the polyphonic H+N engine
+             ignores them (they remain as ports for the granular fallback). -->
         <div class="megalo-brackets">
-            <div class="megalo-bracket" style="left:0; width:50%">WINDOW</div>
-            <div class="megalo-bracket" style="left:50%; width:50%">GRAIN</div>
+            <div class="megalo-bracket" style="left:0; width:100%">WINDOW</div>
         </div>
 
         <!-- ── Top handles: time-domain markers ───────────────────────
@@ -98,30 +98,6 @@
                 <div class="megalo-hit megalo-hit-passive"
                      mod-role="input-control-port"
                      mod-port-symbol="attack_skip_ms"
-                     mod-widget-rotation="270"></div>
-            </div>
-
-            <div class="megalo-handle megalo-handle-grain" data-handle="grain_size_ms"
-                 data-axis="x" data-min="5" data-max="200" title="Grain Size">
-                <div class="megalo-handle-track"></div>
-                <div class="megalo-handle-knob"></div>
-                <span class="megalo-handle-label">SIZE</span>
-                <span class="megalo-handle-value" data-handle-value="grain_size_ms"></span>
-                <div class="megalo-hit megalo-hit-passive"
-                     mod-role="input-control-port"
-                     mod-port-symbol="grain_size_ms"
-                     mod-widget-rotation="270"></div>
-            </div>
-
-            <div class="megalo-handle megalo-handle-grain" data-handle="grain_xfade_ms"
-                 data-axis="x" data-min="5" data-max="100" title="Grain Crossfade">
-                <div class="megalo-handle-track"></div>
-                <div class="megalo-handle-knob"></div>
-                <span class="megalo-handle-label">XFADE</span>
-                <span class="megalo-handle-value" data-handle-value="grain_xfade_ms"></span>
-                <div class="megalo-hit megalo-hit-passive"
-                     mod-role="input-control-port"
-                     mod-port-symbol="grain_xfade_ms"
                      mod-widget-rotation="270"></div>
             </div>
 
