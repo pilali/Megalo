@@ -25,6 +25,15 @@
 #include "phase_vocoder.hpp"
 #endif
 
+#ifdef MEGALO_HN_SYNTH
+#include "hn_multif0.hpp"
+#include "hn_nnls.hpp"
+#include "hn_poly_synth.hpp"
+#ifdef MEGALO_RAVE
+#include "rave_engine.hpp"
+#endif
+#endif
+
 // Internal constants (not exposed as parameters)
 static constexpr int XFADE_MS        = 20;
 static constexpr int RETRIGGER_MS    = 200;
@@ -76,6 +85,21 @@ struct MegaloDsp {
     // onset so the GUI poll catches the transition reliably).
     int   trigger_hold  = 0;   // samples remaining in the held-high window
     float trigger_value = 0.0f;
+
+#ifdef MEGALO_HN_SYNTH
+    // Polyphonic harmonic+noise engine. Analysis runs once per capture (at the
+    // block following LoopReady); the three voice banks resynthesize the whole
+    // chord at base/pitch1/pitch2. When no pitched content is found the granular
+    // path below is used as a fallback.
+    MultiHNState      hn_state;
+    PolyAdditiveSynth hn_v0;   // base chord
+    PolyAdditiveSynth hn_v1;   // pitch voice 1 (+ detune LFO)
+    PolyAdditiveSynth hn_v2;   // pitch voice 2
+    bool hn_needs_analysis = false;
+#ifdef MEGALO_RAVE
+    RaveEngine rave;
+#endif
+#endif
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -139,6 +163,10 @@ void megalo_dsp_reset(MegaloDsp* p)
     p->cached_stereo = -1;
     p->trigger_hold = 0;
     p->trigger_value = 0.0f;
+#ifdef MEGALO_HN_SYNTH
+    p->hn_state          = MultiHNState{};
+    p->hn_needs_analysis = false;
+#endif
 }
 
 // Shared worker for the mono and stereo entry points. outR == nullptr selects
@@ -236,6 +264,35 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
     }
 #endif
 
+#ifdef MEGALO_HN_SYNTH
+    // ── H+N analysis (deferred from LoopReady to this block boundary) ──────
+    // hn_multif0_analyze() is not RT-safe (FFT + NNLS, a few ms); running it
+    // here, once per capture, keeps the per-sample loop clean.
+    if (p->hn_needs_analysis) {
+        const float* la = p->freeze.loop_data();
+        const int    ll = p->freeze.loop_len();
+        if (ll > 0) {
+            p->hn_state = hn_multif0_analyze(la, ll, sr);
+            p->hn_v0.reset(p->hn_state, sr);
+            p->hn_v1.reset(p->hn_state, sr);
+            p->hn_v2.reset(p->hn_state, sr);
+#ifdef MEGALO_RAVE
+            if (p->rave.valid()) p->rave.encode(la, ll, sr);
+#endif
+        }
+        p->hn_needs_analysis = false;
+    }
+    // Update the chord transpositions every block (real-time knob changes).
+    if (p->hn_state.valid) {
+        const double lfo_blk  = std::sin(2.0 * M_PI * p->lfo_phase);
+        const float  det_semi = detune_en
+                              ? static_cast<float>(detune_ct * lfo_blk / 100.0) : 0.0f;
+        p->hn_v0.set_pitch_ratio(base_speed);
+        p->hn_v1.set_pitch_ratio(static_cast<float>(semi_to_ratio(p1_semi + det_semi)));
+        p->hn_v2.set_pitch_ratio(static_cast<float>(semi_to_ratio(p2_semi)));
+    }
+#endif
+
     // ── Sample loop ────────────────────────────────────────────────────────
     bool onset_this_block = false;
     for (uint32_t i = 0; i < n_samples; ++i) {
@@ -263,6 +320,9 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             p->pv2.reset();
 #endif
             p->envelope.trigger();
+#ifdef MEGALO_HN_SYNTH
+            p->hn_needs_analysis = true;   // analyze the fresh loop next block
+#endif
         }
 
         // LFO
@@ -273,32 +333,52 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
         const float*   ldata = p->freeze.loop_data();
         const int      llen  = p->freeze.loop_len();
 
-        // Detuned speed: linear interpolation of 2^(±detune_ct/1200) driven by LFO.
-        // Avoids per-sample std::pow; det_ratio = 2^(detune_ct/1200) precomputed above.
-        const float det_speed = base_speed *
-            static_cast<float>(1.0 + (det_ratio - 1.0) * lfo);
-
-        const float v0 = p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
-        const float vd = p->gp_d.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed);
-        float v1, v2;
-#ifdef MEGALO_PHASE_VOCODER
-        if (use_pv) {
-            v1 = (llen > 0) ? p->pv1.process(ldata, llen) : 0.0f;
-            v2 = (llen > 0) ? p->pv2.process(ldata, llen) : 0.0f;
+        float freeze_sig;
+        // v1/v2 live at loop scope: the right channel's phase-vocoder path
+        // shares them. Granular voices for pitch 1/2 (else: HN replaces them).
+        float v1 = 0.0f, v2 = 0.0f;
+#ifdef MEGALO_HN_SYNTH
+        const bool hn_on = p->hn_state.valid;
+        if (hn_on) {
+            // Polyphonic additive resynthesis of the frozen chord. The granular
+            // players are skipped entirely on this path.
+            const float h0 = p->hn_v0.process();
+            const float h1 = p->hn_v1.process();
+            const float h2 = p->hn_v2.process();
+            freeze_sig = h0 + (pitch1_en ? h1 * p1_lvl : 0.0f)
+                            + (pitch2_en ? h2 * p2_lvl : 0.0f);
         } else
 #endif
         {
-            v1 = p->gp1.process(ldata, llen, grain_samples, grain_xfade_smp, v1_speed);
-            v2 = p->gp2.process(ldata, llen, grain_samples, grain_xfade_smp, v2_speed);
+            // Detuned speed: linear interpolation of 2^(±detune_ct/1200) driven
+            // by the LFO. Avoids per-sample std::pow (det_ratio precomputed).
+            const float det_speed = base_speed *
+                static_cast<float>(1.0 + (det_ratio - 1.0) * lfo);
+
+            const float v0 = p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
+            const float vd = p->gp_d.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed);
+#ifdef MEGALO_PHASE_VOCODER
+            if (use_pv) {
+                v1 = (llen > 0) ? p->pv1.process(ldata, llen) : 0.0f;
+                v2 = (llen > 0) ? p->pv2.process(ldata, llen) : 0.0f;
+            } else
+#endif
+            {
+                v1 = p->gp1.process(ldata, llen, grain_samples, grain_xfade_smp, v1_speed);
+                v2 = p->gp2.process(ldata, llen, grain_samples, grain_xfade_smp, v2_speed);
+            }
+
+            // Mix: detune_blend fades between dry base and detuned base
+            const float base_sig = detune_en
+                ? v0 * (1.0f - detune_blend) + vd * detune_blend
+                : v0;
+            freeze_sig = base_sig
+                + (pitch1_en ? v1 * p1_lvl : 0.0f)
+                + (pitch2_en ? v2 * p2_lvl : 0.0f);
         }
 
-        // Mix: detune_blend fades between dry base and detuned base
-        const float base_sig = detune_en
-            ? v0 * (1.0f - detune_blend) + vd * detune_blend
-            : v0;
-        float freeze_sig = base_sig
-            + (pitch1_en ? v1 * p1_lvl : 0.0f)
-            + (pitch2_en ? v2 * p2_lvl : 0.0f);
+        // Pre-filter wet, reused by the right channel when the HN pad is centred.
+        [[maybe_unused]] const float wet_pre = freeze_sig;
 
         freeze_sig  = p->filter.process(freeze_sig);
 
@@ -309,34 +389,43 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
         outL[i] = soft_clip(x * (1.0f - blend) + freeze_sig * blend);
 
         if (stereo) {
-            // Right channel: independent grain randomisation (decorrelated
-            // seeds), anti-phase detune LFO, and the micro-offset filter.
-            // The dry x stays identical on both sides → mono-compatible.
-            const float det_speed_r = base_speed *
-                static_cast<float>(1.0 + (det_ratio - 1.0) * (-lfo));
-
-            const float v0r = p->gp0_r.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
-            const float vdr = p->gp_d_r.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed_r);
-            float v1r, v2r;
-#ifdef MEGALO_PHASE_VOCODER
-            if (use_pv) {
-                // The phase vocoder is heavy; share its pitch voices across
-                // channels. Width still comes from the granular base + detune.
-                v1r = v1;
-                v2r = v2;
+            float freeze_r;
+#ifdef MEGALO_HN_SYNTH
+            if (hn_on) {
+                // HN pad is centred (mono-compatible) → reuse the left wet.
+                freeze_r = wet_pre;
             } else
 #endif
             {
-                v1r = p->gp1_r.process(ldata, llen, grain_samples, grain_xfade_smp, v1_speed);
-                v2r = p->gp2_r.process(ldata, llen, grain_samples, grain_xfade_smp, v2_speed);
-            }
+                // Right channel: independent grain randomisation (decorrelated
+                // seeds), anti-phase detune LFO, and the micro-offset filter.
+                // The dry x stays identical on both sides → mono-compatible.
+                const float det_speed_r = base_speed *
+                    static_cast<float>(1.0 + (det_ratio - 1.0) * (-lfo));
 
-            const float base_r = detune_en
-                ? v0r * (1.0f - detune_blend) + vdr * detune_blend
-                : v0r;
-            float freeze_r = base_r
-                + (pitch1_en ? v1r * p1_lvl : 0.0f)
-                + (pitch2_en ? v2r * p2_lvl : 0.0f);
+                const float v0r = p->gp0_r.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
+                const float vdr = p->gp_d_r.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed_r);
+                float v1r, v2r;
+#ifdef MEGALO_PHASE_VOCODER
+                if (use_pv) {
+                    // The phase vocoder is heavy; share its pitch voices across
+                    // channels. Width still comes from the granular base + detune.
+                    v1r = v1;
+                    v2r = v2;
+                } else
+#endif
+                {
+                    v1r = p->gp1_r.process(ldata, llen, grain_samples, grain_xfade_smp, v1_speed);
+                    v2r = p->gp2_r.process(ldata, llen, grain_samples, grain_xfade_smp, v2_speed);
+                }
+
+                const float base_r = detune_en
+                    ? v0r * (1.0f - detune_blend) + vdr * detune_blend
+                    : v0r;
+                freeze_r = base_r
+                    + (pitch1_en ? v1r * p1_lvl : 0.0f)
+                    + (pitch2_en ? v2r * p2_lvl : 0.0f);
+            }
 
             freeze_r  = p->filter_r.process(freeze_r);
             freeze_r *= env_g;
