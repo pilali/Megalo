@@ -48,18 +48,31 @@ static inline float mag_at(const float* mag, int nbins, float bin) noexcept
 }
 
 // Harmonic-comb salience of a candidate fundamental f0.
+//
+// A 1/sqrt(k) weighting already disfavours the octave-up trap. The extra
+// sub-octave GUARD handles the opposite error seen on real audio: a phantom
+// f0 = F/2 whose comb (F/2, F, 3F/2, 2F …) lands its EVEN harmonics on a real
+// note F's partials and scores high. A genuine note has energy on its
+// fundamental and odd harmonics (g, 3g, 5g); a phantom sub-octave has ~none
+// there (the real source sits at 2g, 4g …). We scale salience by how much of
+// the comb's energy actually sits on the odd harmonics, so a phantom — whose
+// own fundamental is essentially absent — is pushed below the real note.
 static inline float salience(const float* mag, int nbins, float f0,
                              float sr, int fft_n) noexcept
 {
     const float bin_per_hz = static_cast<float>(fft_n) / sr;
     const int   kmax       = std::min(hnq::MAX_PARTIALS,
                                       static_cast<int>(0.46f * sr / f0));
-    float s = 0.0f;
+    float s = 0.0f, odd = 0.0f, even = 0.0f;
     for (int k = 1; k <= kmax; ++k) {
-        const float w = 1.0f / std::sqrt(static_cast<float>(k));
-        s += w * mag_at(mag, nbins, f0 * static_cast<float>(k) * bin_per_hz);
+        const float m = mag_at(mag, nbins, f0 * static_cast<float>(k) * bin_per_hz);
+        s += m / std::sqrt(static_cast<float>(k));
+        if (k & 1) odd += m; else even += m;
     }
-    return s;
+    // guard ≈ 1 for a real harmonic note, → small when the odd harmonics
+    // (fundamental included) are missing, i.e. a sub-octave phantom.
+    const float guard = (odd + even > 1e-12f) ? odd / (odd + even) : 0.0f;
+    return s * (0.25f + 0.75f * std::min(1.0f, 2.0f * guard));
 }
 
 } // namespace hnmf
