@@ -64,6 +64,12 @@ static inline float salience(const float* mag, int nbins, float f0,
 
 } // namespace hnmf
 
+// Optional second-stage amplitude attribution (definition in hn_nnls.hpp).
+// Only referenced when hnq::USE_NNLS is true, so a translation unit that does
+// not need it (dwarf tier) need not include hn_nnls.hpp.
+inline void hn_refine_nnls(const float* mag, int nbins, float sr, int fft_n,
+                           float amp_scale, MultiHNState& st) noexcept;
+
 static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
                                        float sr) noexcept
 {
@@ -79,6 +85,7 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
     static thread_local float re[hnq::FFT_SIZE];
     static thread_local float im[hnq::FFT_SIZE];
     static thread_local float mag[hnq::FFT_SIZE / 2];
+    static thread_local float mag_orig[hnq::FFT_SIZE / 2];   // kept for NNLS
 
     float win_sum = 0.0f;
     for (int i = 0; i < L; ++i) {
@@ -96,6 +103,7 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
     float total_energy = 0.0f;
     for (int i = 0; i < NB; ++i) {
         mag[i] = std::sqrt(re[i] * re[i] + im[i] * im[i]);
+        mag_orig[i] = mag[i];               // greedy pass destroys mag[]
         total_energy += mag[i] * mag[i];
     }
     // Single-sided sinusoid amplitude ≈ 2·peak_mag / Σwindow.
@@ -202,6 +210,12 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
     // Scale to a time-domain RMS estimate comparable to the old monophonic path.
     out.noise_rms = noise_frac;
     for (int i = 0; i < out.n_notes; ++i) out.notes[i].noise_rms = noise_frac;
+
+    // Second stage: joint amplitude attribution to recover octave notes whose
+    // partials are shared with an already-detected lower note (uses the
+    // pre-subtraction spectrum). Greedy-only on the dwarf tier.
+    if constexpr (hnq::USE_NNLS)
+        hn_refine_nnls(mag_orig, NB, sr, N, amp_scale, out);
 
     out.valid = (out.n_notes > 0);
     return out;

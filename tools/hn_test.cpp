@@ -10,6 +10,7 @@
 //       tools/hn_test.cpp -o /tmp/hn_test && /tmp/hn_test
 
 #include "hn_multif0.hpp"
+#include "hn_nnls.hpp"
 #include <cstdio>
 #include <cmath>
 #include <vector>
