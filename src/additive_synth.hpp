@@ -2,6 +2,7 @@
 #include "hn_analyzer.hpp"
 #include <cmath>
 #include <cstring>
+#include <cstdint>
 
 // ── Additive synthesizer ──────────────────────────────────────────────────
 //
