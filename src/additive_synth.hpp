@@ -1,5 +1,5 @@
 #pragma once
-#include "hn_analyzer.hpp"
+#include "hn_state.hpp"
 #include <cmath>
 #include <cstring>
 #include <cstdint>

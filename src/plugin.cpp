@@ -15,8 +15,9 @@
 #endif
 
 #ifdef MEGALO_HN_SYNTH
-#include "hn_analyzer.hpp"
-#include "additive_synth.hpp"
+#include "hn_multif0.hpp"
+#include "hn_nnls.hpp"
+#include "hn_poly_synth.hpp"
 #ifdef MEGALO_RAVE
 #include "rave_engine.hpp"
 #endif
@@ -88,10 +89,10 @@ struct Megalo {
 #endif
 
 #ifdef MEGALO_HN_SYNTH
-    HNState     hn_state;
-    AdditiveSynth hn_v0;   // base voice
-    AdditiveSynth hn_v1;   // pitch voice 1 (+ detune LFO)
-    AdditiveSynth hn_v2;   // pitch voice 2
+    MultiHNState  hn_state;
+    PolyAdditiveSynth hn_v0;   // base chord
+    PolyAdditiveSynth hn_v1;   // pitch voice 1 (+ detune LFO)
+    PolyAdditiveSynth hn_v2;   // pitch voice 2
     bool hn_needs_analysis = false;
 #ifdef MEGALO_RAVE
     RaveEngine  rave;
@@ -152,7 +153,7 @@ static void activate(LV2_Handle handle)
     p->pv1_last_semi = p->pv2_last_semi = 1e9f;
 #endif
 #ifdef MEGALO_HN_SYNTH
-    p->hn_state           = HNState{};
+    p->hn_state           = MultiHNState{};
     p->hn_needs_analysis  = false;
 #endif
 }
@@ -223,13 +224,13 @@ static void run(LV2_Handle handle, uint32_t n_samples)
 
 #ifdef MEGALO_HN_SYNTH
     // ── H+N analysis (deferred from LoopReady to block boundary) ──────────
-    // hn_analyze() is not RT-safe (several ms); running it here, once per
+    // hn_multif0_analyze() is not RT-safe (FFT + NNLS); running it here, once per
     // capture, causes a short click but keeps the per-sample loop clean.
     if (p->hn_needs_analysis) {
         const float* ldata_ana = p->freeze.loop_data();
         const int    llen_ana  = p->freeze.loop_len();
         if (llen_ana > 0) {
-            p->hn_state = hn_analyze(ldata_ana, llen_ana, sr);
+            p->hn_state = hn_multif0_analyze(ldata_ana, llen_ana, sr);
             p->hn_v0.reset(p->hn_state, sr);
             p->hn_v1.reset(p->hn_state, sr);
             p->hn_v2.reset(p->hn_state, sr);

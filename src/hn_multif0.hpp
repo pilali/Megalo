@@ -1,5 +1,5 @@
 #pragma once
-#include "hn_analyzer.hpp"   // HNState, HN_MAX_PARTIALS
+#include "hn_state.hpp"      // HNState, HN_MAX_PARTIALS
 #include "hn_quality.hpp"    // hnq::FFT_SIZE, MAX_NOTES, MAX_PARTIALS, F0_*
 #include "hn_fft.hpp"
 #include <cmath>

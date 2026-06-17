@@ -1,32 +1,23 @@
 #pragma once
+#include "hn_state.hpp"   // HNState, HN_MAX_PARTIALS
 #include <cmath>
 #include <cstring>
 #include <algorithm>
 
-// ── Harmonic + Noise analyzer ─────────────────────────────────────────────
+// ── Monophonic Harmonic + Noise analyzer (legacy / reference) ──────────────
 //
-// Runs ONCE on LoopReady (NOT inside the per-sample loop).
-// Produces HNState consumed by AdditiveSynth for real-time resynthesis.
+// Superseded by the polyphonic hn_multif0_analyze() (hn_multif0.hpp); kept for
+// reference and A/B comparison. Runs ONCE on LoopReady. Produces a single
+// HNState consumed by AdditiveSynth.
 //
 // Typical cost on Cortex-A7 @ 1 GHz:
 //   YIN   on 1024 samples                   ≈ 1.5 ms
 //   Goertzel for 32 partials × 4096 samples ≈ 1.5 ms
 //   Total ≈ 3 ms — acceptable at block boundary (one-shot per capture)
 
-static constexpr int   HN_MAX_PARTIALS = 32;
 static constexpr float HN_F0_MIN       = 40.0f;   // ~E1, below bass guitar low E
 static constexpr float HN_F0_MAX       = 2000.0f; // well above guitar fretboard
 static constexpr float HN_CONF_THRESH  = 0.55f;   // minimum YIN confidence
-
-struct HNState {
-    float f0         = 0.0f;  // detected fundamental, Hz (0 = no pitch found)
-    float confidence = 0.0f;  // YIN CMNDF confidence [0, 1]
-    int   n_partials = 0;
-    float harm_amp  [HN_MAX_PARTIALS] = {};
-    float harm_phase[HN_MAX_PARTIALS] = {};
-    float noise_rms  = 0.0f;  // broadband residual level
-    bool  valid      = false; // false → caller should fall back to granular
-};
 
 // ── YIN F0 detector ───────────────────────────────────────────────────────
 // Cumulative Mean Normalised Difference Function on at most WIN=1024 samples.
