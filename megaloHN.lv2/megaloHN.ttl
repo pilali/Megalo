@@ -305,4 +305,53 @@
         lv2:symbol "audio_out_r" ;
         lv2:name   "Audio Out R" ;
         lv2:portProperty lv2:connectionOptional
+    ] ,
+
+    # ── H+N timbre controls ──────────────────────────────────────────────
+    # Shape the polyphonic additive resynthesis. Ignored on the granular
+    # fallback (when no pitched content is detected).
+    [
+        a lv2:InputPort, lv2:ControlPort ;
+        lv2:index 28 ;
+        lv2:symbol "hn_brightness" ;
+        lv2:name   "Brightness" ;
+        lv2:default 0.0 ;
+        lv2:minimum -1.0 ;
+        lv2:maximum 1.0 ;
+    ] ,
+    [
+        a lv2:InputPort, lv2:ControlPort ;
+        lv2:index 29 ;
+        lv2:symbol "hn_damping" ;
+        lv2:name   "Damping" ;
+        lv2:default 0.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ;
+    ] ,
+    [
+        a lv2:InputPort, lv2:ControlPort ;
+        lv2:index 30 ;
+        lv2:symbol "hn_even_odd" ;
+        lv2:name   "Even/Odd" ;
+        lv2:default 0.0 ;
+        lv2:minimum -1.0 ;
+        lv2:maximum 1.0 ;
+    ] ,
+    [
+        a lv2:InputPort, lv2:ControlPort ;
+        lv2:index 31 ;
+        lv2:symbol "hn_noise" ;
+        lv2:name   "Noise" ;
+        lv2:default 0.4 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ;
+    ] ,
+    [
+        a lv2:InputPort, lv2:ControlPort ;
+        lv2:index 32 ;
+        lv2:symbol "hn_width" ;
+        lv2:name   "Stereo Width" ;
+        lv2:default 0.3 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ;
     ] .

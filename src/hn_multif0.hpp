@@ -268,7 +268,8 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
     for (int i = 0; i < out.n_notes; ++i)
         for (int k = 0; k < out.notes[i].n_partials; ++k)
             harm_ss += 0.5f * out.notes[i].harm_amp[k] * out.notes[i].harm_amp[k];
-    const float noise_rms = hnq::NOISE_GAIN * std::sqrt(std::max(0.0f, sig_ss - harm_ss));
+    // Pure residual RMS; the user "Noise" control scales it in the synth.
+    const float noise_rms = std::sqrt(std::max(0.0f, sig_ss - harm_ss));
     out.noise_rms = noise_rms;
     for (int i = 0; i < out.n_notes; ++i) out.notes[i].noise_rms = noise_rms;
 

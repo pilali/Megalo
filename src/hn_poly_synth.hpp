@@ -31,10 +31,27 @@ public:
         for (int i = 0; i < _n; ++i) _v[i].set_pitch_ratio(ratio);
     }
 
+    // Timbre controls, applied to every voice (see AdditiveSynth::set_timbre).
+    void set_timbre(float brightness, float damping,
+                    float even_odd, float noise) noexcept {
+        for (int i = 0; i < _n; ++i)
+            _v[i].set_timbre(brightness, damping, even_odd, noise);
+    }
+
     float process() noexcept {
         float out = 0.0f;
         for (int i = 0; i < _n; ++i) out += _v[i].process();
         return out;
+    }
+
+    // Sum the voices into a stereo pair with the given width [0,1].
+    void process_stereo(float& l, float& r, float width) noexcept {
+        l = r = 0.0f;
+        for (int i = 0; i < _n; ++i) {
+            float vl, vr;
+            _v[i].process_stereo(vl, vr, width);
+            l += vl; r += vr;
+        }
     }
 
     int n_active() const noexcept { return _n; }

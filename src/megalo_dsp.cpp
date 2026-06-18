@@ -96,6 +96,9 @@ struct MegaloDsp {
     PolyAdditiveSynth hn_v1;   // pitch voice 1 (+ detune LFO)
     PolyAdditiveSynth hn_v2;   // pitch voice 2
     bool hn_needs_analysis = false;
+    // Cached timbre controls so set_timbre() (pow/exp per partial) only re-runs
+    // when a knob actually moves. Sentinel forces the first update.
+    float hn_t_bright = 1e9f, hn_t_damp = 1e9f, hn_t_eo = 1e9f, hn_t_noise = 1e9f;
 #ifdef MEGALO_RAVE
     RaveEngine rave;
 #endif
@@ -166,6 +169,7 @@ void megalo_dsp_reset(MegaloDsp* p)
 #ifdef MEGALO_HN_SYNTH
     p->hn_state          = MultiHNState{};
     p->hn_needs_analysis = false;
+    p->hn_t_bright = p->hn_t_damp = p->hn_t_eo = p->hn_t_noise = 1e9f;
 #endif
 }
 
@@ -265,6 +269,12 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
 #endif
 
 #ifdef MEGALO_HN_SYNTH
+    const float hn_bright = std::clamp(p_->hn_brightness, -1.0f, 1.0f);
+    const float hn_damp   = std::clamp(p_->hn_damping,     0.0f, 1.0f);
+    const float hn_eo     = std::clamp(p_->hn_even_odd,   -1.0f, 1.0f);
+    const float hn_noise  = std::clamp(p_->hn_noise,       0.0f, 1.0f);
+    const float hn_width  = std::clamp(p_->hn_width,       0.0f, 1.0f);
+
     // ── H+N analysis (deferred from LoopReady to this block boundary) ──────
     // hn_multif0_analyze() is not RT-safe (FFT + NNLS, a few ms); running it
     // here, once per capture, keeps the per-sample loop clean.
@@ -276,11 +286,22 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             p->hn_v0.reset(p->hn_state, sr);
             p->hn_v1.reset(p->hn_state, sr);
             p->hn_v2.reset(p->hn_state, sr);
+            p->hn_t_bright = 1e9f;   // fresh voices → force a timbre re-apply
 #ifdef MEGALO_RAVE
             if (p->rave.valid()) p->rave.encode(la, ll, sr);
 #endif
         }
         p->hn_needs_analysis = false;
+    }
+    // Re-apply the timbre gains only when a control moved (or after analysis).
+    if (p->hn_state.valid &&
+        (hn_bright != p->hn_t_bright || hn_damp != p->hn_t_damp ||
+         hn_eo != p->hn_t_eo || hn_noise != p->hn_t_noise)) {
+        p->hn_v0.set_timbre(hn_bright, hn_damp, hn_eo, hn_noise);
+        p->hn_v1.set_timbre(hn_bright, hn_damp, hn_eo, hn_noise);
+        p->hn_v2.set_timbre(hn_bright, hn_damp, hn_eo, hn_noise);
+        p->hn_t_bright = hn_bright; p->hn_t_damp = hn_damp;
+        p->hn_t_eo = hn_eo;         p->hn_t_noise = hn_noise;
     }
     // Update the chord transpositions every block (real-time knob changes).
     if (p->hn_state.valid) {
@@ -342,14 +363,27 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
         float v1 = 0.0f, v2 = 0.0f;
 #ifdef MEGALO_HN_SYNTH
         const bool hn_on = p->hn_state.valid;
+        float hn_wet_r = 0.0f;   // HN right channel (carried to the stereo block)
         if (hn_on) {
             // Polyphonic additive resynthesis of the frozen chord. The granular
             // players are skipped entirely on this path.
-            const float h0 = p->hn_v0.process();
-            const float h1 = p->hn_v1.process();
-            const float h2 = p->hn_v2.process();
-            freeze_sig = h0 + (pitch1_en ? h1 * p1_lvl : 0.0f)
-                            + (pitch2_en ? h2 * p2_lvl : 0.0f);
+            if (stereo && hn_width > 0.0f) {
+                float l0, r0, l1, r1, l2, r2;
+                p->hn_v0.process_stereo(l0, r0, hn_width);
+                p->hn_v1.process_stereo(l1, r1, hn_width);
+                p->hn_v2.process_stereo(l2, r2, hn_width);
+                freeze_sig = l0 + (pitch1_en ? l1 * p1_lvl : 0.0f)
+                                + (pitch2_en ? l2 * p2_lvl : 0.0f);
+                hn_wet_r   = r0 + (pitch1_en ? r1 * p1_lvl : 0.0f)
+                                + (pitch2_en ? r2 * p2_lvl : 0.0f);
+            } else {
+                const float h0 = p->hn_v0.process();
+                const float h1 = p->hn_v1.process();
+                const float h2 = p->hn_v2.process();
+                freeze_sig = h0 + (pitch1_en ? h1 * p1_lvl : 0.0f)
+                                + (pitch2_en ? h2 * p2_lvl : 0.0f);
+                hn_wet_r = freeze_sig;   // centred
+            }
         } else
 #endif
         {
@@ -380,9 +414,6 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
                 + (pitch2_en ? v2 * p2_lvl : 0.0f);
         }
 
-        // Pre-filter wet, reused by the right channel when the HN pad is centred.
-        [[maybe_unused]] const float wet_pre = freeze_sig;
-
         freeze_sig  = p->filter.process(freeze_sig);
 
         // Advance the envelope exactly once per sample; both channels share it.
@@ -395,8 +426,8 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             float freeze_r;
 #ifdef MEGALO_HN_SYNTH
             if (hn_on) {
-                // HN pad is centred (mono-compatible) → reuse the left wet.
-                freeze_r = wet_pre;
+                // Width-decorrelated right channel (== left when hn_width == 0).
+                freeze_r = hn_wet_r;
             } else
 #endif
             {

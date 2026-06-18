@@ -57,11 +57,4 @@ namespace hnq {
     // (not max-relative) so the instrument's natural harmonic roll-off is kept.
     static constexpr float PARTIAL_FLOOR_X = 3.0f;
 
-    // Noise level scaler applied to the residual RMS. The residual still holds
-    // un-modelled tonal content (inharmonicity, partials beyond MAX_PARTIALS,
-    // inter-note beating, reverb tail); played as broadband noise it sounds far
-    // too prominent on a sustained resynthesis. A plucked string is nearly pure
-    // harmonic in sustain, so we keep only a subtle breath/pick component.
-    static constexpr float NOISE_GAIN = 0.4f;
-
 } // namespace hnq
