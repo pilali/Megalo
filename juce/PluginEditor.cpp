@@ -507,6 +507,11 @@ MegaloEditor::MegaloEditor(MegaloAudioProcessor& p)
     addKnob("filter_q",     "Q");       // 8
     addKnob("base_pitch",   "BASE");    // 9  GLOBAL
     addKnob("blend",        "BLEND");   // 10
+    addKnob("hn_brightness","BRIGHT");  // 11 TIMBRE
+    addKnob("hn_damping",   "DAMP");    // 12
+    addKnob("hn_even_odd",  "EVEN");    // 13
+    addKnob("hn_noise",     "NOISE");   // 14
+    addKnob("hn_width",     "WIDTH");   // 15
 
     leds.add(new LedToggle(proc.apvts, "pitch1_enable"));
     leds.add(new LedToggle(proc.apvts, "pitch2_enable"));
@@ -516,7 +521,7 @@ MegaloEditor::MegaloEditor(MegaloAudioProcessor& p)
     addAndMakeVisible(filterType);
     addAndMakeVisible(pitchEngine);
 
-    setSize(720, 380);
+    setSize(720, 470);
     startTimerHz(30);
 }
 
@@ -581,12 +586,22 @@ void MegaloEditor::paint(juce::Graphics& g)
         { "FILTER", 410, 166 }, { "GLOBAL", 584, 110 }
     };
     for (auto& gr : groups) {
-        juce::Rectangle<int> r(gr.x, 245, gr.w, 123);
+        juce::Rectangle<int> r(gr.x, 245, gr.w, 113);
         g.setColour(juce::Colours::black.withAlpha(0.18f));
         g.fillRoundedRectangle(r.toFloat(), 6.0f);
         g.setColour(megalo::kOrange);
         g.setFont(megalo::font(11.0f, true));
         g.drawText(gr.title, r.getX() + 8, r.getY() + 6, r.getWidth() - 26, 12,
+                   juce::Justification::left, false);
+    }
+    // TIMBRE — full-width second row.
+    {
+        juce::Rectangle<int> r(26, 368, 668, 88);
+        g.setColour(juce::Colours::black.withAlpha(0.18f));
+        g.fillRoundedRectangle(r.toFloat(), 6.0f);
+        g.setColour(megalo::kOrange);
+        g.setFont(megalo::font(11.0f, true));
+        g.drawText("TIMBRE", r.getX() + 8, r.getY() + 6, r.getWidth() - 26, 12,
                    juce::Justification::left, false);
     }
 }
@@ -631,4 +646,15 @@ void MegaloEditor::resized()
     knobs[8]->setBounds(fx, bodyY, knobW, knobH);
 
     layoutRow(584, 110, { 9, 10 }, 0);         // GLOBAL
+
+    // TIMBRE — five knobs spread across the full-width second row.
+    {
+        const int tBodyY = 368 + 26;
+        const int n = 5, rowW = n * knobW + (n - 1) * gap;
+        int x = 26 + (668 - rowW) / 2;
+        for (int i = 11; i <= 15; ++i) {
+            knobs[i]->setBounds(x, tBodyY, knobW, knobH);
+            x += knobW + gap;
+        }
+    }
 }
