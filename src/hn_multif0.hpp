@@ -100,7 +100,7 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
     static thread_local float mag[hnq::FFT_SIZE / 2];
     static thread_local float mag_orig[hnq::FFT_SIZE / 2];   // kept for NNLS
 
-    float win_sum = 0.0f;
+    float win_sum = 0.0f, sig_ss = 0.0f;
     for (int i = 0; i < L; ++i) {
         // Hann window over the L analysed samples.
         const float w = 0.5f * (1.0f - std::cos(2.0f * float(M_PI) *
@@ -108,16 +108,16 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
         re[i] = loop[i] * w;
         im[i] = 0.0f;
         win_sum += w;
+        sig_ss += loop[i] * loop[i];        // raw signal power (for noise RMS)
     }
+    sig_ss = (L > 0) ? sig_ss / static_cast<float>(L) : 0.0f;
     for (int i = L; i < N; ++i) { re[i] = 0.0f; im[i] = 0.0f; }
 
     hnfft::fft(re, im, N);
 
-    float total_energy = 0.0f;
     for (int i = 0; i < NB; ++i) {
         mag[i] = std::sqrt(re[i] * re[i] + im[i] * im[i]);
         mag_orig[i] = mag[i];               // greedy pass destroys mag[]
-        total_energy += mag[i] * mag[i];
     }
     // Single-sided sinusoid amplitude ≈ 2·peak_mag / Σwindow.
     const float amp_scale = (win_sum > 0.0f) ? (2.0f / win_sum) : 0.0f;
@@ -215,20 +215,25 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
             cand_sal[c] = hnmf::salience(mag, NB, cand_f0[c], sr, N);
     }
 
-    // ── 4. Residual → shared noise RMS ────────────────────────────────────
-    float residual = 0.0f;
-    for (int i = 0; i < NB; ++i) residual += mag[i] * mag[i];
-    const float noise_frac = (total_energy > 0.0f)
-                             ? std::sqrt(residual / total_energy) : 0.0f;
-    // Scale to a time-domain RMS estimate comparable to the old monophonic path.
-    out.noise_rms = noise_frac;
-    for (int i = 0; i < out.n_notes; ++i) out.notes[i].noise_rms = noise_frac;
-
     // Second stage: joint amplitude attribution to recover octave notes whose
     // partials are shared with an already-detected lower note (uses the
     // pre-subtraction spectrum). Greedy-only on the dwarf tier.
     if constexpr (hnq::USE_NNLS)
         hn_refine_nnls(mag_orig, NB, sr, N, amp_scale, out);
+
+    // ── 4. Shared noise RMS = residual after the harmonics ────────────────
+    // A real RMS amplitude (NOT a spectral ratio): the leftover signal power
+    // once the harmonic power Σ½·amp² of every detected note is removed, so it
+    // sits at the right level next to the calibrated harm_amp values. The old
+    // spectral-ratio estimate counted each partial's window leakage as noise
+    // and, scaled in the synth, drowned the notes under pink noise.
+    float harm_ss = 0.0f;
+    for (int i = 0; i < out.n_notes; ++i)
+        for (int k = 0; k < out.notes[i].n_partials; ++k)
+            harm_ss += 0.5f * out.notes[i].harm_amp[k] * out.notes[i].harm_amp[k];
+    const float noise_rms = std::sqrt(std::max(0.0f, sig_ss - harm_ss));
+    out.noise_rms = noise_rms;
+    for (int i = 0; i < out.n_notes; ++i) out.notes[i].noise_rms = noise_rms;
 
     out.valid = (out.n_notes > 0);
     return out;
