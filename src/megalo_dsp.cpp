@@ -33,20 +33,20 @@ static constexpr int CAPTURE_FADE_MS = 10;
 // Latency-compensation dry-fill ("no audio hole").
 // When an onset triggers a new freeze, the captured loop is not ready for the
 // whole PendingSkip+Recording window (hundreds of ms). During that gap the wet
-// path is silent (first freeze) or the stale loop fading out, so at full blend
-// the output would drop out. We fill the gap with the live dry signal and then
-// hand back to the processed pad once the new loop is ready.
+// path is the PREVIOUS loop releasing (or silent on the first freeze), so at
+// full blend the output would thin out. We add the live dry signal to fill only
+// what the wet is missing, then hand back to the new pad once the loop is ready.
+// The output is always additive: out = mix + x·blend·comp·dry_level, so the wet
+// (previous loop releasing, or new pad attacking) is never masked.
 //
-// Two phases (comp_level = dry-fill amount in [0,1]):
-//   • Gap (comp_target = 1): crossfade output toward the live dry, masking the
-//     stale/silent wet — out = x·comp + mix·(1−comp).
-//   • Recovery (comp_target = 0, loop ready): the pad rises on its OWN envelope
-//     (env_g) and the dry-fill is added on top, receding as env_g climbs —
-//     out = mix + x·blend·comp. The pad is therefore gained by env_g ALONE
-//     (single rise); the earlier code multiplied it by (1−comp) as well, so a
-//     fresh pad attacking from zero was attenuated twice and came out far too
-//     quiet next to the slowly-receding dry. Driving the recede off env_g keeps
-//     the two perfectly complementary.
+// comp_level = dry-fill amount in [0,1], driven by the shared envelope env_g:
+//   • Gap (comp_target = 1): comp tracks 1−env_g, rising only as the previous
+//     loop's RELEASE fades — so that release stays audible instead of being
+//     masked by an immediate dry crossfade (rate-capped for anti-click).
+//   • LoopReady: comp is forced to 1 to cover the hand-over while the new loop
+//     attacks from zero.
+//   • Recovery (comp_target = 0): comp recedes following the new pad's attack
+//     (1−env_g), latched so a later decay/release can't lift the dry-fill again.
 static constexpr int COMP_FADE_IN_MS  = 15;   // onset → dry (fast, anti-click)
 static constexpr int COMP_FADE_OUT_MS = 60;   // anti-click floor: fastest the
                                               // dry-fill may recede (the env
@@ -311,6 +311,10 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             p->envelope.reset();
             p->envelope.trigger();
             // New pad is ready → hand the dry-fill back to the pad's envelope.
+            // Force full dry coverage now: the new loop attacks from zero, so the
+            // dry must cover the hand-over (the gap left comp_level low while the
+            // previous loop was still releasing); recovery recedes it as env_g rises.
+            p->comp_level  = 1.0f;
             p->comp_target = 0.0f;
         }
 
@@ -357,8 +361,11 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
 
         // Update the latency-compensation dry-fill (shared L/R, once per sample).
         if (p->comp_target > 0.0f) {
-            // Gap: ramp the dry-fill up fast (anti-click).
-            p->comp_level = std::min(1.0f, p->comp_level + comp_up_inc);
+            // Gap: the dry-fill rises to cover the capture latency, but only as
+            // the PREVIOUS loop's release (env_g) fades — so that release is
+            // preserved, not masked. Rate-capped (comp_up_inc) for anti-click.
+            p->comp_level = std::min(1.0f - env_g,
+                                     std::min(1.0f, p->comp_level + comp_up_inc));
         } else {
             // Recovery: recede following the pad's own attack (1 − env_g) but no
             // faster than the anti-click floor. min() latches the fade so a later
@@ -367,14 +374,11 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
                 std::max(1.0f - env_g, p->comp_level - comp_dn_inc));
         }
 
-        // Mix the wet (env-shaped pad) with the live dry, then fold in the
-        // dry-fill. Gap: crossfade to dry, masking the stale/silent wet.
-        // Recovery: add the dry-fill on top so the pad is gained by env_g alone
-        // (single rise) while the dry recedes complementarily.
+        // Additive dry-fill in both phases: the wet (previous loop releasing, or
+        // the new pad rising) plays on its own envelope, and the dry only fills
+        // the deficit — so neither the release nor the attack is masked.
         const float mixL = x * (1.0f - blend) + freeze_sig * blend;
-        outL[i] = soft_clip(p->comp_target > 0.0f
-            ? x * p->comp_level * dry_level + mixL * (1.0f - p->comp_level)
-            : mixL + x * blend * p->comp_level * dry_level);
+        outL[i] = soft_clip(mixL + x * blend * p->comp_level * dry_level);
 
         if (stereo) {
             // Right channel: independent grain randomisation (decorrelated
@@ -410,9 +414,7 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             freeze_r *= env_g;
 
             const float mixR = x * (1.0f - blend) + freeze_r * blend;
-            outR[i] = soft_clip(p->comp_target > 0.0f
-                ? x * p->comp_level * dry_level + mixR * (1.0f - p->comp_level)
-                : mixR + x * blend * p->comp_level * dry_level);
+            outR[i] = soft_clip(mixR + x * blend * p->comp_level * dry_level);
         }
     }
 
