@@ -169,6 +169,8 @@
     <!-- ── Knob / switch row below the window ─────────────────────── -->
     <div class="megalo-controls">
 
+      <div class="megalo-controls-row">
+
         <!-- Voice 1 -->
         <div class="megalo-group">
             <div class="megalo-group-head">
@@ -337,6 +339,56 @@
                 </div>
             </div>
         </div>
+
+      </div><!-- /controls-row 1 -->
+
+      <div class="megalo-controls-row">
+
+        <!-- Timbre — shapes the polyphonic H+N resynthesis -->
+        <div class="megalo-group megalo-group-wide">
+            <div class="megalo-group-head">
+                <span class="megalo-group-title">TIMBRE</span>
+            </div>
+            <div class="megalo-group-body">
+                <div class="megalo-knob" title="Brightness (spectral tilt)">
+                    <div class="megalo-knob-dial" mod-role="input-control-port"
+                         mod-port-symbol="hn_brightness" mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">BRIGHT</span>
+                </div>
+                <div class="megalo-knob" title="Damping (high roll-off)">
+                    <div class="megalo-knob-dial" mod-role="input-control-port"
+                         mod-port-symbol="hn_damping" mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">DAMP</span>
+                </div>
+                <div class="megalo-knob" title="Even/Odd harmonic balance">
+                    <div class="megalo-knob-dial" mod-role="input-control-port"
+                         mod-port-symbol="hn_even_odd" mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">EVEN</span>
+                </div>
+                <div class="megalo-knob" title="Noise / air amount">
+                    <div class="megalo-knob-dial" mod-role="input-control-port"
+                         mod-port-symbol="hn_noise" mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">NOISE</span>
+                </div>
+                <div class="megalo-knob" title="Stereo width">
+                    <div class="megalo-knob-dial" mod-role="input-control-port"
+                         mod-port-symbol="hn_width" mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">WIDTH</span>
+                </div>
+            </div>
+        </div>
+
+      </div><!-- /controls-row 2 -->
 
     </div>
 

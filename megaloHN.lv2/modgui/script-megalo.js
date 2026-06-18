@@ -36,7 +36,12 @@ function (event, funcs) {
         detune_blend:    { kind: 'ratio'    },
         filter_cutoff:   { kind: 'hz-long'  },
         filter_q:        { kind: 'ratio'    },
-        filter_type:     { kind: 'choice', labels: ['LP', 'HP', 'BP'] }
+        filter_type:     { kind: 'choice', labels: ['LP', 'HP', 'BP'] },
+        hn_brightness:   { kind: 'ratio'    },
+        hn_damping:      { kind: 'ratio'    },
+        hn_even_odd:     { kind: 'ratio'    },
+        hn_noise:        { kind: 'ratio'    },
+        hn_width:        { kind: 'ratio'    }
     }
 
     function formatValue(symbol, value) {

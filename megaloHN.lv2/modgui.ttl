@@ -62,6 +62,16 @@
             lv2:index 24 ; lv2:symbol "pitch1_enable"  ; lv2:name "Voice 1 Enable" ;
         ] , [
             lv2:index 25 ; lv2:symbol "pitch2_enable"  ; lv2:name "Voice 2 Enable" ;
+        ] , [
+            lv2:index 28 ; lv2:symbol "hn_brightness"  ; lv2:name "Brightness" ;
+        ] , [
+            lv2:index 29 ; lv2:symbol "hn_damping"     ; lv2:name "Damping" ;
+        ] , [
+            lv2:index 30 ; lv2:symbol "hn_even_odd"    ; lv2:name "Even/Odd" ;
+        ] , [
+            lv2:index 31 ; lv2:symbol "hn_noise"       ; lv2:name "Noise" ;
+        ] , [
+            lv2:index 32 ; lv2:symbol "hn_width"       ; lv2:name "Stereo Width" ;
         ] ;
 
         # Subscribe to the plugin's onset-trigger output so the modgui JS
