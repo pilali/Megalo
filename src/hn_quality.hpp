@@ -43,8 +43,12 @@ namespace hnq {
 
     // Pitch range, shared by every tier. F0_MIN extends a perfect fourth below
     // the guitar's low E (E2 ≈ 82.4 Hz) down to A1 = 55 Hz, as requested.
-    static constexpr float F0_MIN = 55.0f;    // A1
-    static constexpr float F0_MAX = 1100.0f;  // ~C#6, top of the playable range
+    static constexpr float F0_MIN = 55.0f;    // A1, a fourth below the low E
+    // Highest fundamental a guitar can physically produce: the 24th fret of the
+    // high-E string = E6 = E4 (329.63 Hz) × 2² = 1318.5 Hz. Anything above is
+    // necessarily a harmonic artefact, so the candidate grid never proposes it.
+    // (+25 cents of tuning tolerance so a slightly sharp E6 still registers.)
+    static constexpr float F0_MAX = 1318.5f * 1.0146f;  // E6 + 25 cents ≈ 1337 Hz
 
     // A partial whose spectral magnitude does not exceed this multiple of the
     // mean spectral magnitude (≈ noise floor) is treated as noise and dropped —
