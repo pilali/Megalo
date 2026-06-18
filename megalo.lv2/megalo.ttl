@@ -305,4 +305,17 @@
         lv2:symbol "audio_out_r" ;
         lv2:name   "Audio Out R" ;
         lv2:portProperty lv2:connectionOptional
+    ] ,
+
+    # ── TEMPORARY: dry-fill level (crossfade tuning) ─────────────────────
+    # Gain on the latency-mask dry-fill so the right dry level for the
+    # dry→wet crossfade can be dialled in by ear. To be removed once tuned.
+    [
+        a lv2:InputPort, lv2:ControlPort ;
+        lv2:index 28 ;
+        lv2:symbol "dry_level" ;
+        lv2:name   "Dry Level (temp)" ;
+        lv2:default 1.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 2.0 ;
     ] .

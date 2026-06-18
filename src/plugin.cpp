@@ -43,12 +43,13 @@ enum Port : uint32_t {
     P_PITCH2_EN      = 25,   // voice-2 on/off       [0, 1]
     P_TRIGGER_OUT    = 26,   // momentary onset pulse [0, 1] — output for GUI flash
     P_AUDIO_OUT_R    = 27,   // optional right output — connected ⇒ stereo path
-    P_COUNT          = 28
+    P_DRY_LEVEL      = 28,   // TEMPORARY dry-fill gain [0 – 2] — crossfade tuning
+    P_COUNT          = 29
 };
 
-// Number of *input* control ports stored in the ctl[] array. P_TRIGGER_OUT
-// is an output, handled separately via trigger_out.
-static constexpr uint32_t N_CTL = P_TRIGGER_OUT - 2;
+// ctl[] slots cover every port up to P_COUNT (index port-2). The two output
+// ports (trigger, audio_out_r) leave unused holes and are stored separately.
+static constexpr uint32_t N_CTL = P_COUNT - 2;
 
 // ── Plugin instance ────────────────────────────────────────────────────────
 struct MegaloLV2 {
@@ -90,7 +91,9 @@ static void connect_port(LV2_Handle handle, uint32_t port, void* data)
         p->trigger_out = static_cast<float*>(data);
     else if (port == P_AUDIO_OUT_R)
         p->audio_out_r = static_cast<float*>(data);
-    else if (port >= 2 && port < P_TRIGGER_OUT)
+    else if (port >= 2 && port < P_TRIGGER_OUT)        // control inputs 2..25
+        p->ctl[port - 2] = static_cast<const float*>(data);
+    else if (port > P_AUDIO_OUT_R && port < P_COUNT)   // dry_level (28)
         p->ctl[port - 2] = static_cast<const float*>(data);
 }
 
@@ -136,6 +139,7 @@ static void run(LV2_Handle handle, uint32_t n_samples)
 #else
         0.0f,
 #endif
+        ctl(p, P_DRY_LEVEL),
     };
 
     // The right output is an optional port: when the host connects it we run

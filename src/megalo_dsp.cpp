@@ -185,6 +185,9 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
     const int   sample_ms     = std::clamp(static_cast<int>(p_->sample_ms), 50, 500);
     const int   attack_skip   = std::clamp(static_cast<int>(p_->attack_skip_ms), 0, 500);
     const float blend         = std::clamp(p_->blend,               0.0f,   1.0f);
+    // TEMPORARY tuning control: gain on the latency-mask dry-fill so the right
+    // dry level for the dry→wet crossfade can be found by ear.
+    const float dry_level     = std::clamp(p_->dry_level,           0.0f,   2.0f);
     const int   grain_ms      = std::clamp(static_cast<int>(p_->grain_size_ms),    5, 200);
     const int   grain_samples = std::clamp((int)(sr * grain_ms * 0.001f), 16, FREEZE_MAX_SAMPLES);
     const int   grain_xfade_ms  = std::clamp(static_cast<int>(p_->grain_xfade_ms), 5, 100);
@@ -370,8 +373,8 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
         // (single rise) while the dry recedes complementarily.
         const float mixL = x * (1.0f - blend) + freeze_sig * blend;
         outL[i] = soft_clip(p->comp_target > 0.0f
-            ? x * p->comp_level + mixL * (1.0f - p->comp_level)
-            : mixL + x * blend * p->comp_level);
+            ? x * p->comp_level * dry_level + mixL * (1.0f - p->comp_level)
+            : mixL + x * blend * p->comp_level * dry_level);
 
         if (stereo) {
             // Right channel: independent grain randomisation (decorrelated
@@ -408,8 +411,8 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
 
             const float mixR = x * (1.0f - blend) + freeze_r * blend;
             outR[i] = soft_clip(p->comp_target > 0.0f
-                ? x * p->comp_level + mixR * (1.0f - p->comp_level)
-                : mixR + x * blend * p->comp_level);
+                ? x * p->comp_level * dry_level + mixR * (1.0f - p->comp_level)
+                : mixR + x * blend * p->comp_level * dry_level);
         }
     }
 

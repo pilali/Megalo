@@ -62,6 +62,8 @@
             lv2:index 24 ; lv2:symbol "pitch1_enable"  ; lv2:name "Voice 1 Enable" ;
         ] , [
             lv2:index 25 ; lv2:symbol "pitch2_enable"  ; lv2:name "Voice 2 Enable" ;
+        ] , [
+            lv2:index 28 ; lv2:symbol "dry_level"      ; lv2:name "Dry Level (temp)" ;
         ] ;
 
         # Subscribe to the plugin's onset-trigger output so the modgui JS

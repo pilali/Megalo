@@ -135,7 +135,8 @@ void MegaloAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         pFiltType->load(), pFiltCutoff->load(), pFiltQ->load(),
         pEnvAtk->load(), pEnvDcy->load(), pEnvSus->load(), pEnvRel->load(),
         pDetuneEn->load(), pPitch1En->load(), pPitch2En->load(),
-        pPitchMode->load()
+        pPitchMode->load(),
+        1.0f   // dry_level: temporary LV2-only tuning control, neutral here
     };
 
     // Mono engine (guitar): sum the input to mono, process once, fan out.

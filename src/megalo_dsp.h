@@ -39,6 +39,8 @@ typedef struct {
     float pitch_mode;        /* pitch engine: <0.5 = granular, >=0.5 = phase   */
                              /* vocoder. Only honoured when the core is built  */
                              /* with MEGALO_PHASE_VOCODER (else always granular).*/
+    float dry_level;         /* TEMPORARY: gain on the latency-mask dry-fill    */
+                             /* [0 – 2], 1 = neutral. For tuning the crossfade. */
 } MegaloParams;
 
 typedef struct MegaloDsp MegaloDsp;          /* opaque state */
