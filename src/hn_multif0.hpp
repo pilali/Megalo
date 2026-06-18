@@ -47,6 +47,26 @@ static inline float mag_at(const float* mag, int nbins, float bin) noexcept
     return mag[i0] + frac * (mag[i0 + 1] - mag[i0]);
 }
 
+// True peak magnitude of a partial near `bin`: snap to the local maximum
+// within ±2 bins, then parabolic-interpolate the vertex. Recovers the real
+// amplitude of an off-bin partial (a single interpolated sample loses up to
+// ~36% to Hann scalloping), so the harmonic power is not under-counted and
+// mis-attributed to the noise residual. Used for amplitude estimation; the
+// salience comb keeps the cheaper mag_at.
+static inline float peak_mag(const float* mag, int nbins, float bin) noexcept
+{
+    const int c0 = static_cast<int>(std::lround(bin));
+    if (c0 < 2 || c0 >= nbins - 2) return mag_at(mag, nbins, bin);
+    int c = c0;                                 // snap to local max in ±2
+    for (int d = -2; d <= 2; ++d)
+        if (mag[c0 + d] > mag[c]) c = c0 + d;
+    const float a = mag[c - 1], b = mag[c], cc = mag[c + 1];
+    const float denom = a - 2.0f * b + cc;
+    if (std::abs(denom) < 1e-12f) return b;
+    const float p = 0.5f * (a - cc) / denom;    // sub-bin offset [-0.5,0.5]
+    return b - 0.25f * (a - cc) * p;            // parabola vertex value
+}
+
 // Harmonic-comb salience of a candidate fundamental f0.
 //
 // A 1/sqrt(k) weighting already disfavours the octave-up trap. The extra
@@ -188,7 +208,7 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
             const float fb = f0 * static_cast<float>(k) * bin_per_hz;
             const int   ib = static_cast<int>(std::lround(fb));
             if (ib < 1 || ib >= NB - 1) break;
-            const float a   = hnmf::mag_at(mag, NB, fb);
+            const float a   = hnmf::peak_mag(mag, NB, fb);
             const float amp = a * amp_scale;
             st.harm_amp [k - 1] = amp;
             st.harm_phase[k - 1] = std::atan2(im[ib], re[ib]);
@@ -231,7 +251,7 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
     for (int i = 0; i < out.n_notes; ++i)
         for (int k = 0; k < out.notes[i].n_partials; ++k)
             harm_ss += 0.5f * out.notes[i].harm_amp[k] * out.notes[i].harm_amp[k];
-    const float noise_rms = std::sqrt(std::max(0.0f, sig_ss - harm_ss));
+    const float noise_rms = hnq::NOISE_GAIN * std::sqrt(std::max(0.0f, sig_ss - harm_ss));
     out.noise_rms = noise_rms;
     for (int i = 0; i < out.n_notes; ++i) out.notes[i].noise_rms = noise_rms;
 

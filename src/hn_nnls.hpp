@@ -69,7 +69,7 @@ inline void hn_refine_nnls(const float* mag, int nbins, float sr, int fft_n,
         np[c] = 0;
         for (int k = 1; k <= kmax; ++k) {
             const float f = cf0[c] * static_cast<float>(k);
-            const float o = hnmf::mag_at(mag, nbins, f * bin_per_hz) * amp_scale;
+            const float o = hnmf::peak_mag(mag, nbins, f * bin_per_hz) * amp_scale;
             freq[c][k - 1] = f;
             obs [c][k - 1] = o;
             a   [c][k - 1] = o;          // init; shared atoms over-count, EM fixes

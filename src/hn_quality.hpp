@@ -46,4 +46,11 @@ namespace hnq {
     static constexpr float F0_MIN = 55.0f;    // A1
     static constexpr float F0_MAX = 1320.0f;  // ~E6, above the fretboard
 
+    // Noise level scaler applied to the residual RMS. The residual still holds
+    // un-modelled tonal content (inharmonicity, partials beyond MAX_PARTIALS,
+    // inter-note beating, reverb tail); played as broadband noise it sounds far
+    // too prominent on a sustained resynthesis. A plucked string is nearly pure
+    // harmonic in sustain, so we keep only a subtle breath/pick component.
+    static constexpr float NOISE_GAIN = 0.4f;
+
 } // namespace hnq
