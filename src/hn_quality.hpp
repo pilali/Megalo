@@ -44,7 +44,14 @@ namespace hnq {
     // Pitch range, shared by every tier. F0_MIN extends a perfect fourth below
     // the guitar's low E (E2 ≈ 82.4 Hz) down to A1 = 55 Hz, as requested.
     static constexpr float F0_MIN = 55.0f;    // A1
-    static constexpr float F0_MAX = 1320.0f;  // ~E6, above the fretboard
+    static constexpr float F0_MAX = 1100.0f;  // ~C#6, top of the playable range
+
+    // A partial whose spectral magnitude does not exceed this multiple of the
+    // mean spectral magnitude (≈ noise floor) is treated as noise and dropped —
+    // peak_mag can otherwise lift a high partial out of the noise and
+    // resynthesize it as a harsh tonal artefact in the treble. Floor-relative
+    // (not max-relative) so the instrument's natural harmonic roll-off is kept.
+    static constexpr float PARTIAL_FLOOR_X = 3.0f;
 
     // Noise level scaler applied to the residual RMS. The residual still holds
     // un-modelled tonal content (inharmonicity, partials beyond MAX_PARTIALS,

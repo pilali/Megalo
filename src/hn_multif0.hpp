@@ -57,9 +57,9 @@ static inline float peak_mag(const float* mag, int nbins, float bin) noexcept
 {
     const int c0 = static_cast<int>(std::lround(bin));
     if (c0 < 2 || c0 >= nbins - 2) return mag_at(mag, nbins, bin);
-    int c = c0;                                 // snap to local max in ±2
-    for (int d = -2; d <= 2; ++d)
-        if (mag[c0 + d] > mag[c]) c = c0 + d;
+    int c = c0;                                 // snap to local max in ±1 only:
+    for (int d = -1; d <= 1; ++d)               // a real partial peaks within a
+        if (mag[c0 + d] > mag[c]) c = c0 + d;   // bin of k·f0; ±2 grabbed noise.
     const float a = mag[c - 1], b = mag[c], cc = mag[c + 1];
     const float denom = a - 2.0f * b + cc;
     if (std::abs(denom) < 1e-12f) return b;
@@ -135,10 +135,13 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
 
     hnfft::fft(re, im, N);
 
+    float mag_sum = 0.0f;
     for (int i = 0; i < NB; ++i) {
         mag[i] = std::sqrt(re[i] * re[i] + im[i] * im[i]);
         mag_orig[i] = mag[i];               // greedy pass destroys mag[]
+        mag_sum += mag[i];
     }
+    const float mean_mag = (NB > 0) ? mag_sum / static_cast<float>(NB) : 0.0f;
     // Single-sided sinusoid amplitude ≈ 2·peak_mag / Σwindow.
     const float amp_scale = (win_sum > 0.0f) ? (2.0f / win_sum) : 0.0f;
 
@@ -240,6 +243,20 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
     // pre-subtraction spectrum). Greedy-only on the dwarf tier.
     if constexpr (hnq::USE_NNLS)
         hn_refine_nnls(mag_orig, NB, sr, N, amp_scale, out);
+
+    // Partial gate: drop partials at the noise floor (peak_mag can inflate a
+    // high partial out of the noise → harsh treble). Keep a partial only if its
+    // magnitude exceeds PARTIAL_FLOOR_X × the mean spectral magnitude.
+    const float amp_floor = hnq::PARTIAL_FLOOR_X * mean_mag * amp_scale;
+    for (int i = 0; i < out.n_notes; ++i) {
+        HNState& s = out.notes[i];
+        int last = 0;
+        for (int k = 0; k < s.n_partials; ++k) {
+            if (s.harm_amp[k] < amp_floor) s.harm_amp[k] = 0.0f;
+            else last = k + 1;
+        }
+        s.n_partials = last;                    // trim trailing zeros
+    }
 
     // ── 4. Shared noise RMS = residual after the harmonics ────────────────
     // A real RMS amplitude (NOT a spectral ratio): the leftover signal power

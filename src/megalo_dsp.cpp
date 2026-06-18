@@ -287,8 +287,11 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
         const double lfo_blk  = std::sin(2.0 * M_PI * p->lfo_phase);
         const float  det_semi = detune_en
                               ? static_cast<float>(detune_ct * lfo_blk / 100.0) : 0.0f;
-        p->hn_v0.set_pitch_ratio(base_speed);
-        p->hn_v1.set_pitch_ratio(static_cast<float>(semi_to_ratio(p1_semi + det_semi)));
+        // Detune LFO is applied to the always-on base voice (so the effect is
+        // audible without enabling pitch voice 1) and anti-phase on voice 1 for
+        // chorus width. det_semi is already 0 when detune is disabled.
+        p->hn_v0.set_pitch_ratio(base_speed * static_cast<float>(semi_to_ratio(det_semi)));
+        p->hn_v1.set_pitch_ratio(static_cast<float>(semi_to_ratio(p1_semi - det_semi)));
         p->hn_v2.set_pitch_ratio(static_cast<float>(semi_to_ratio(p2_semi)));
     }
 #endif
