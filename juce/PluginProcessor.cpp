@@ -54,6 +54,13 @@ APVTS::ParameterLayout MegaloAudioProcessor::createLayout()
     p.add(std::make_unique<AC>(pid("pitch_mode"), "Pitch Engine",
                                juce::StringArray { "Granular", "Phase Vocoder" }, 0));
 
+    // H+N timbre controls.
+    p.add(std::make_unique<AF>(pid("hn_brightness"), "Brightness", Range(-1.0f, 1.0f), 0.0f));
+    p.add(std::make_unique<AF>(pid("hn_damping"),    "Damping",    Range( 0.0f, 1.0f), 0.0f));
+    p.add(std::make_unique<AF>(pid("hn_even_odd"),   "Even/Odd",   Range(-1.0f, 1.0f), 0.0f));
+    p.add(std::make_unique<AF>(pid("hn_noise"),      "Noise",      Range( 0.0f, 1.0f), 0.4f));
+    p.add(std::make_unique<AF>(pid("hn_width"),      "Stereo Width", Range(0.0f, 1.0f), 0.3f));
+
     return p;
 }
 
@@ -89,6 +96,11 @@ MegaloAudioProcessor::MegaloAudioProcessor()
     pPitch1En    = raw("pitch1_enable");
     pPitch2En    = raw("pitch2_enable");
     pPitchMode   = raw("pitch_mode");
+    pHnBright    = raw("hn_brightness");
+    pHnDamp      = raw("hn_damping");
+    pHnEvenOdd   = raw("hn_even_odd");
+    pHnNoise     = raw("hn_noise");
+    pHnWidth     = raw("hn_width");
 }
 
 MegaloAudioProcessor::~MegaloAudioProcessor()
@@ -135,7 +147,9 @@ void MegaloAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         pFiltType->load(), pFiltCutoff->load(), pFiltQ->load(),
         pEnvAtk->load(), pEnvDcy->load(), pEnvSus->load(), pEnvRel->load(),
         pDetuneEn->load(), pPitch1En->load(), pPitch2En->load(),
-        pPitchMode->load()
+        pPitchMode->load(),
+        pHnBright->load(), pHnDamp->load(), pHnEvenOdd->load(),
+        pHnNoise->load(), pHnWidth->load()
     };
 
     // Mono engine (guitar): sum the input to mono, process once, fan out.
