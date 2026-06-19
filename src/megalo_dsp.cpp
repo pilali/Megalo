@@ -39,6 +39,28 @@ static constexpr int XFADE_MS        = 20;
 static constexpr int RETRIGGER_MS    = 200;
 static constexpr int CAPTURE_FADE_MS = 10;
 
+// Latency-compensation dry-fill ("no audio hole").
+// When an onset triggers a new freeze, the captured loop is not ready for the
+// whole PendingSkip+Recording window (hundreds of ms). During that gap the wet
+// path is the PREVIOUS loop releasing (or silent on the first freeze), so at
+// full blend the output would thin out. We add the live dry signal to fill only
+// what the wet is missing, then hand back to the new pad once the loop is ready.
+// The output is always additive: out = mix + x·blend·comp·dry_level, so the wet
+// (previous loop releasing, or new pad attacking) is never masked.
+//
+// comp_level = dry-fill amount in [0,1], driven by the shared envelope env_g:
+//   • Gap (comp_target = 1): comp tracks 1−env_g, rising only as the previous
+//     loop's RELEASE fades — so that release stays audible instead of being
+//     masked by an immediate dry crossfade (rate-capped for anti-click).
+//   • LoopReady: comp is forced to 1 to cover the hand-over while the new loop
+//     attacks from zero.
+//   • Recovery (comp_target = 0): comp recedes following the new pad's attack
+//     (1−env_g), latched so a later decay/release can't lift the dry-fill again.
+static constexpr int COMP_FADE_IN_MS  = 15;   // onset → dry (fast, anti-click)
+static constexpr int COMP_FADE_OUT_MS = 60;   // anti-click floor: fastest the
+                                              // dry-fill may recede (the env
+                                              // attack drives it when slower)
+
 // Stereo width: left/right filter cutoffs are spread by ±this fraction, and
 // the right detune LFO runs anti-phase to the left. Subtle enough to stay
 // mono-compatible (the dry signal is never decorrelated).
@@ -85,6 +107,11 @@ struct MegaloDsp {
     // onset so the GUI poll catches the transition reliably).
     int   trigger_hold  = 0;   // samples remaining in the held-high window
     float trigger_value = 0.0f;
+
+    // Latency-compensation crossfade state (see COMP_FADE_*_MS above). Shared by
+    // both the granular Megalo and the polyphonic MegaloHN builds.
+    float comp_level  = 0.0f;  // current dry-fill amount [0,1]
+    float comp_target = 0.0f;  // 1 on onset (cover the gap), 0 once loop is ready
 
 #ifdef MEGALO_HN_SYNTH
     // Polyphonic harmonic+noise engine. Analysis runs once per capture (at the
@@ -166,6 +193,8 @@ void megalo_dsp_reset(MegaloDsp* p)
     p->cached_stereo = -1;
     p->trigger_hold = 0;
     p->trigger_value = 0.0f;
+    p->comp_level = 0.0f;
+    p->comp_target = 0.0f;
 #ifdef MEGALO_HN_SYNTH
     p->hn_state          = MultiHNState{};
     p->hn_needs_analysis = false;
@@ -189,6 +218,9 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
     const int   sample_ms     = std::clamp(static_cast<int>(p_->sample_ms), 50, 500);
     const int   attack_skip   = std::clamp(static_cast<int>(p_->attack_skip_ms), 0, 500);
     const float blend         = std::clamp(p_->blend,               0.0f,   1.0f);
+    // TEMPORARY tuning control: gain on the latency-mask dry-fill so the right
+    // dry level for the dry→wet crossfade can be found by ear.
+    const float dry_level     = std::clamp(p_->dry_level,           0.0f,   2.0f);
     const int   grain_ms      = std::clamp(static_cast<int>(p_->grain_size_ms),    5, 200);
     const int   grain_samples = std::clamp((int)(sr * grain_ms * 0.001f), 16, FREEZE_MAX_SAMPLES);
     const int   grain_xfade_ms  = std::clamp(static_cast<int>(p_->grain_xfade_ms), 5, 100);
@@ -244,6 +276,16 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
     }
 
     p->envelope.set(env_atk, env_dcy, env_sus, env_rel, sr);
+
+    // Latency-compensation dry-fill increments (per sample). On onset the dry
+    // fades in fast (anti-click). On recovery it recedes following the pad's own
+    // attack envelope (env_g) — comp_dn_inc only caps how fast it may drop, so a
+    // very short attack still gets an anti-click fade and a slow pad swell is
+    // tracked sample-for-sample.
+    const float comp_up_inc = 1.0f /
+        std::max(1.0f, COMP_FADE_IN_MS * 0.001f * sr);
+    const float comp_dn_inc = 1.0f /
+        std::max(1.0f, COMP_FADE_OUT_MS * 0.001f * sr);
 
     const double lfo_inc  = static_cast<double>(chorus_rate) / p->sample_rate;
     // det_speed range per sample: base_speed * 2^(±detune_ct/1200).
@@ -327,6 +369,8 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
 
         if (evt == FreezeEvent::Onset) {
             p->envelope.release();
+            // Cover the capture latency with the live dry signal.
+            p->comp_target = 1.0f;
             onset_this_block = true;
         } else if (evt == FreezeEvent::LoopReady) {
             p->gp0.reset();
@@ -343,7 +387,17 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             p->pv1.reset();
             p->pv2.reset();
 #endif
+            // Start the attack from zero so env_g (which drives the dry-fill
+            // recede below) ramps 0→1 cleanly — no step when the prior release
+            // had not fully decayed.
+            p->envelope.reset();
             p->envelope.trigger();
+            // New pad is ready → hand the dry-fill back to the pad's envelope.
+            // Force full dry coverage now: the new loop attacks from zero, so the
+            // dry must cover the hand-over (the gap left comp_level low while the
+            // previous loop was still releasing); recovery recedes it as env_g rises.
+            p->comp_level  = 1.0f;
+            p->comp_target = 0.0f;
 #ifdef MEGALO_HN_SYNTH
             p->hn_needs_analysis = true;   // analyze the fresh loop next block
 #endif
@@ -420,7 +474,26 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
         const float env_g = p->envelope.process();
         freeze_sig *= env_g;
 
-        outL[i] = soft_clip(x * (1.0f - blend) + freeze_sig * blend);
+        // Update the latency-compensation dry-fill (shared L/R, once per sample).
+        if (p->comp_target > 0.0f) {
+            // Gap: the dry-fill rises to cover the capture latency, but only as
+            // the PREVIOUS loop's release (env_g) fades — so that release is
+            // preserved, not masked. Rate-capped (comp_up_inc) for anti-click.
+            p->comp_level = std::min(1.0f - env_g,
+                                     std::min(1.0f, p->comp_level + comp_up_inc));
+        } else {
+            // Recovery: recede following the pad's own attack (1 − env_g) but no
+            // faster than the anti-click floor. min() latches the fade so a later
+            // decay/release of env_g can't bring the dry-fill back up.
+            p->comp_level = std::min(p->comp_level,
+                std::max(1.0f - env_g, p->comp_level - comp_dn_inc));
+        }
+
+        // Additive dry-fill in both phases: the wet (previous loop releasing, or
+        // the new pad rising) plays on its own envelope, and the dry only fills
+        // the deficit — so neither the release nor the attack is masked.
+        const float mixL = x * (1.0f - blend) + freeze_sig * blend;
+        outL[i] = soft_clip(mixL + x * blend * p->comp_level * dry_level);
 
         if (stereo) {
             float freeze_r;
@@ -464,7 +537,8 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             freeze_r  = p->filter_r.process(freeze_r);
             freeze_r *= env_g;
 
-            outR[i] = soft_clip(x * (1.0f - blend) + freeze_r * blend);
+            const float mixR = x * (1.0f - blend) + freeze_r * blend;
+            outR[i] = soft_clip(mixR + x * blend * p->comp_level * dry_level);
         }
     }
 

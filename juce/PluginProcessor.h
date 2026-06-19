@@ -75,11 +75,13 @@ private:
     std::atomic<float>* pPitch1En    = nullptr;
     std::atomic<float>* pPitch2En    = nullptr;
     std::atomic<float>* pPitchMode   = nullptr;
+#ifdef MEGALO_HN_SYNTH
     std::atomic<float>* pHnBright     = nullptr;
     std::atomic<float>* pHnDamp       = nullptr;
     std::atomic<float>* pHnEvenOdd    = nullptr;
     std::atomic<float>* pHnNoise      = nullptr;
     std::atomic<float>* pHnWidth      = nullptr;
+#endif
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MegaloAudioProcessor)
 };

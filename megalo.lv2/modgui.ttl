@@ -1,7 +1,7 @@
 @prefix modgui: <http://moddevices.com/ns/modgui#> .
 @prefix lv2:    <http://lv2plug.in/ns/lv2core#> .
 
-<https://github.com/pilali/megalo/hn>
+<https://github.com/pilali/megalo>
     modgui:gui [
         modgui:resourcesDirectory <modgui> ;
         modgui:iconTemplate    <modgui/icon-megalo.html> ;
@@ -10,7 +10,7 @@
         modgui:screenshot      <modgui/screenshot-megalo.png> ;
         modgui:thumbnail       <modgui/thumbnail-megalo.png> ;
         modgui:brand           "Pilal" ;
-        modgui:label           "MegaloHN" ;
+        modgui:label           "Megalo" ;
 
         # Ports surfaced to the host (parameter list / automation).
         # The icon template binds each widget directly by lv2:symbol.
@@ -64,16 +64,6 @@
             lv2:index 25 ; lv2:symbol "pitch2_enable"  ; lv2:name "Voice 2 Enable" ;
         ] , [
             lv2:index 28 ; lv2:symbol "dry_level"      ; lv2:name "Dry Level (temp)" ;
-        ] , [
-            lv2:index 29 ; lv2:symbol "hn_brightness"  ; lv2:name "Brightness" ;
-        ] , [
-            lv2:index 30 ; lv2:symbol "hn_damping"     ; lv2:name "Damping" ;
-        ] , [
-            lv2:index 31 ; lv2:symbol "hn_even_odd"    ; lv2:name "Even/Odd" ;
-        ] , [
-            lv2:index 32 ; lv2:symbol "hn_noise"       ; lv2:name "Noise" ;
-        ] , [
-            lv2:index 33 ; lv2:symbol "hn_width"       ; lv2:name "Stereo Width" ;
         ] ;
 
         # Subscribe to the plugin's onset-trigger output so the modgui JS

@@ -507,11 +507,13 @@ MegaloEditor::MegaloEditor(MegaloAudioProcessor& p)
     addKnob("filter_q",     "Q");       // 8
     addKnob("base_pitch",   "BASE");    // 9  GLOBAL
     addKnob("blend",        "BLEND");   // 10
-    addKnob("hn_brightness","BRIGHT");  // 11 TIMBRE
+#ifdef MEGALO_HN_SYNTH
+    addKnob("hn_brightness","BRIGHT");  // 11 TIMBRE (MegaloHN only)
     addKnob("hn_damping",   "DAMP");    // 12
     addKnob("hn_even_odd",  "EVEN");    // 13
     addKnob("hn_noise",     "NOISE");   // 14
     addKnob("hn_width",     "WIDTH");   // 15
+#endif
 
     leds.add(new LedToggle(proc.apvts, "pitch1_enable"));
     leds.add(new LedToggle(proc.apvts, "pitch2_enable"));
@@ -521,7 +523,11 @@ MegaloEditor::MegaloEditor(MegaloAudioProcessor& p)
     addAndMakeVisible(filterType);
     addAndMakeVisible(pitchEngine);
 
-    setSize(720, 470);
+#ifdef MEGALO_HN_SYNTH
+    setSize(720, 470);   // extra row for TIMBRE
+#else
+    setSize(720, 380);
+#endif
     startTimerHz(30);
 }
 
@@ -594,7 +600,8 @@ void MegaloEditor::paint(juce::Graphics& g)
         g.drawText(gr.title, r.getX() + 8, r.getY() + 6, r.getWidth() - 26, 12,
                    juce::Justification::left, false);
     }
-    // TIMBRE — full-width second row.
+#ifdef MEGALO_HN_SYNTH
+    // TIMBRE — full-width second row (MegaloHN only).
     {
         juce::Rectangle<int> r(26, 368, 668, 88);
         g.setColour(juce::Colours::black.withAlpha(0.18f));
@@ -604,6 +611,7 @@ void MegaloEditor::paint(juce::Graphics& g)
         g.drawText("TIMBRE", r.getX() + 8, r.getY() + 6, r.getWidth() - 26, 12,
                    juce::Justification::left, false);
     }
+#endif
 }
 
 void MegaloEditor::resized()
@@ -647,6 +655,7 @@ void MegaloEditor::resized()
 
     layoutRow(584, 110, { 9, 10 }, 0);         // GLOBAL
 
+#ifdef MEGALO_HN_SYNTH
     // TIMBRE — five knobs spread across the full-width second row.
     {
         const int tBodyY = 368 + 26;
@@ -657,4 +666,5 @@ void MegaloEditor::resized()
             x += knobW + gap;
         }
     }
+#endif
 }

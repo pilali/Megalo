@@ -39,13 +39,15 @@ typedef struct {
     float pitch_mode;        /* pitch engine: <0.5 = granular, >=0.5 = phase   */
                              /* vocoder. Only honoured when the core is built  */
                              /* with MEGALO_PHASE_VOCODER (else always granular).*/
-    /* H+N timbre controls (used when built with MEGALO_HN_SYNTH and the
-       polyphonic engine is active; ignored on the granular fallback). */
-    float hn_brightness;     /* idx 28 [-1 – 1]  spectral tilt: dark ↔ bright   */
-    float hn_damping;        /* idx 29 [ 0 – 1]  high-partial roll-off          */
-    float hn_even_odd;       /* idx 30 [-1 – 1]  even-harmonic: hollow ↔ full   */
-    float hn_noise;          /* idx 31 [ 0 – 1]  noise / air amount             */
-    float hn_width;          /* idx 32 [ 0 – 1]  stereo width of the pad        */
+    /* Shared latency-mask dry-fill gain (both Megalo and MegaloHN). */
+    float dry_level;         /* idx 28 TEMPORARY [0 – 2], 1 = neutral; crossfade */
+    /* H+N timbre controls — only meaningful in the MegaloHN build (compiled
+       with MEGALO_HN_SYNTH); the granular Megalo build leaves them at 0. */
+    float hn_brightness;     /* idx 29 [-1 – 1]  spectral tilt: dark ↔ bright   */
+    float hn_damping;        /* idx 30 [ 0 – 1]  high-partial roll-off          */
+    float hn_even_odd;       /* idx 31 [-1 – 1]  even-harmonic: hollow ↔ full   */
+    float hn_noise;          /* idx 32 [ 0 – 1]  noise / air amount             */
+    float hn_width;          /* idx 33 [ 0 – 1]  stereo width of the pad        */
 } MegaloParams;
 
 typedef struct MegaloDsp MegaloDsp;          /* opaque state */

@@ -11,7 +11,13 @@
 
 #include "megalo_dsp.h"
 
+// Distinct URI per build so the two plugins cohabit: the granular Megalo and
+// the polyphonic MegaloHN.
+#ifdef MEGALO_HN_SYNTH
 static constexpr char MEGALO_URI[] = "https://github.com/pilali/megalo/hn";
+#else
+static constexpr char MEGALO_URI[] = "https://github.com/pilali/megalo";
+#endif
 
 // ── Port indices ───────────────────────────────────────────────────────────
 enum Port : uint32_t {
@@ -43,17 +49,21 @@ enum Port : uint32_t {
     P_PITCH2_EN      = 25,   // voice-2 on/off       [0, 1]
     P_TRIGGER_OUT    = 26,   // momentary onset pulse [0, 1] — output for GUI flash
     P_AUDIO_OUT_R    = 27,   // optional right output — connected ⇒ stereo path
-    P_HN_BRIGHTNESS  = 28,   // H+N timbre: spectral tilt   [-1 – 1]
-    P_HN_DAMPING     = 29,   // H+N timbre: high roll-off   [0 – 1]
-    P_HN_EVEN_ODD    = 30,   // H+N timbre: even-harmonic   [-1 – 1]
-    P_HN_NOISE       = 31,   // H+N timbre: noise / air     [0 – 1]
-    P_HN_WIDTH       = 32,   // H+N stereo width            [0 – 1]
-    P_COUNT          = 33
+    P_DRY_LEVEL      = 28,   // TEMPORARY dry-fill gain [0 – 2] — crossfade tuning
+#ifdef MEGALO_HN_SYNTH
+    P_HN_BRIGHTNESS  = 29,   // H+N timbre: spectral tilt   [-1 – 1]
+    P_HN_DAMPING     = 30,   // H+N timbre: high roll-off   [0 – 1]
+    P_HN_EVEN_ODD    = 31,   // H+N timbre: even-harmonic   [-1 – 1]
+    P_HN_NOISE       = 32,   // H+N timbre: noise / air     [0 – 1]
+    P_HN_WIDTH       = 33,   // H+N stereo width            [0 – 1]
+    P_COUNT          = 34
+#else
+    P_COUNT          = 29
+#endif
 };
 
-// Slots in the ctl[] array (control-input ports live at index port-2). Sized to
-// cover every port up to P_COUNT; the two output ports (trigger, audio_out_r)
-// leave unused holes and are stored in their own fields instead.
+// ctl[] slots cover every port up to P_COUNT (index port-2). The two output
+// ports (trigger, audio_out_r) leave unused holes and are stored separately.
 static constexpr uint32_t N_CTL = P_COUNT - 2;
 
 // ── Plugin instance ────────────────────────────────────────────────────────
@@ -98,7 +108,7 @@ static void connect_port(LV2_Handle handle, uint32_t port, void* data)
         p->audio_out_r = static_cast<float*>(data);
     else if (port >= 2 && port < P_TRIGGER_OUT)        // control inputs 2..25
         p->ctl[port - 2] = static_cast<const float*>(data);
-    else if (port > P_AUDIO_OUT_R && port < P_COUNT)   // H+N timbre 28..32
+    else if (port > P_AUDIO_OUT_R && port < P_COUNT)   // dry_level (28) + timbre (29..)
         p->ctl[port - 2] = static_cast<const float*>(data);
 }
 
@@ -144,11 +154,14 @@ static void run(LV2_Handle handle, uint32_t n_samples)
 #else
         0.0f,
 #endif
+        ctl(p, P_DRY_LEVEL),
+#ifdef MEGALO_HN_SYNTH
         ctl(p, P_HN_BRIGHTNESS),
         ctl(p, P_HN_DAMPING),
         ctl(p, P_HN_EVEN_ODD),
         ctl(p, P_HN_NOISE),
         ctl(p, P_HN_WIDTH),
+#endif
     };
 
     // The right output is an optional port: when the host connects it we run
