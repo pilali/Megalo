@@ -35,12 +35,11 @@ MEGALOHN_HN_Q   = dwarf
 endif
 
 define MEGALOHN_BUILD_CMDS
-	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) \
+	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) megaloHN \
 		TARGET=$(MEGALOHN_TARGET) \
 		CXX="$(TARGET_CXX)" \
 		STRIP="$(TARGET_STRIP)" \
 		CXXFLAGS="$(TARGET_CXXFLAGS) -std=c++17 -O3 -ffast-math -fvisibility=hidden" \
-		MEGALO_HN_SYNTH=1 \
 		MEGALO_HN_QUALITY=$(MEGALOHN_HN_Q)
 endef
 

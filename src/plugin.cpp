@@ -161,6 +161,10 @@ static void run(LV2_Handle handle, uint32_t n_samples)
         ctl(p, P_HN_EVEN_ODD),
         ctl(p, P_HN_NOISE),
         ctl(p, P_HN_WIDTH),
+#else
+        // Stock Megalo: the H+N timbre fields exist in the shared struct but
+        // are unused by the granular core. Zero them to keep -Wextra quiet.
+        0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
 #endif
     };
 

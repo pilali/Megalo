@@ -20,7 +20,11 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
+#ifdef MEGALO_HN_SYNTH
+    const juce::String getName() const override { return "MegaloHN"; }
+#else
     const juce::String getName() const override { return "Megalo"; }
+#endif
     bool acceptsMidi() const override  { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
