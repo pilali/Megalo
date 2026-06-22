@@ -39,9 +39,9 @@ typedef struct {
     float pitch_mode;        /* pitch engine: <0.5 = granular, >=0.5 = phase   */
                              /* vocoder. Only honoured when the core is built  */
                              /* with MEGALO_PHASE_VOCODER (else always granular).*/
-    /* Shared dry/wet controls (both Megalo and MegaloHN). */
+    /* Shared dry/wet control (both Megalo and MegaloHN). The onset dry→wet
+       crossfade time is not a separate control — it follows env_attack. */
     float dry_level;         /* idx 28 [0 – 2], 1 = neutral; gain on live dry    */
-    float xfade_ms;          /* onset dry→wet crossfade time [0 – 2000] ms       */
     /* H+N timbre controls — only meaningful in the MegaloHN build (compiled
        with MEGALO_HN_SYNTH); the granular Megalo build leaves them at 0. */
     float hn_brightness;     /* idx 29 [-1 – 1]  spectral tilt: dark ↔ bright   */

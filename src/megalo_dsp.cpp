@@ -47,12 +47,13 @@ static constexpr int CAPTURE_FADE_MS = 10;
 //      sweep (sin/cos law) instead of the old −6 dB dip at the centre.
 //
 //   2. onset crossfade — at every new freeze the output is held on the live
-//      dry signal and then fades to the steady blend over a user control
-//      (xfade_ms). This both masks the capture latency ("no audio hole") and
-//      gives an audible, controllable dry→wet transition. xfade ∈ [0,1] is 1
-//      right after onset (cover with dry) and decays to 0 (steady blend) once
-//      the new pad is ready (LoopReady for granular Megalo; after the deferred
-//      analysis for MegaloHN). Per sample:
+//      dry signal and then fades to the steady blend over the ENVELOPE ATTACK
+//      time (env_attack), so the dry recedes exactly as the frozen pad attacks
+//      in. This both masks the capture latency ("no audio hole") and gives a
+//      natural dry→wet transition. xfade ∈ [0,1] is 1 right after onset (cover
+//      with dry) and decays to 0 (steady blend) once the new pad is ready
+//      (LoopReady for granular Megalo; after the deferred analysis for
+//      MegaloHN). Per sample:
 //        dry_g = (dry_g0 + (1 − dry_g0)·xfade) · dry_level
 //        wet_g =  wet_g0
 //        out   = soft_clip(x·dry_g + freeze_sig·wet_g)
@@ -231,9 +232,6 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
     const float dry_g0        = std::cos(blend * 1.57079633f);
     // Dry level: gain on the live dry signal (1.0 = neutral). Permanent control.
     const float dry_level     = std::clamp(p_->dry_level,           0.0f,   2.0f);
-    // Onset dry→wet crossfade time: how long the output takes to fade from the
-    // covered live dry back to the steady blend after a new pad is ready.
-    const float xfade_ms      = std::clamp(p_->xfade_ms,            0.0f, 2000.0f);
     const int   grain_ms      = std::clamp(static_cast<int>(p_->grain_size_ms),    5, 200);
     const int   grain_samples = std::clamp((int)(sr * grain_ms * 0.001f), 16, FREEZE_MAX_SAMPLES);
     const int   grain_xfade_ms  = std::clamp(static_cast<int>(p_->grain_xfade_ms), 5, 100);
@@ -290,10 +288,11 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
 
     p->envelope.set(env_atk, env_dcy, env_sus, env_rel, sr);
 
-    // Per-sample decrement for the onset crossfade: xfade falls 1→0 over
-    // xfade_ms once the new pad is ready. (0 ms ⇒ instant hand-over.)
+    // The onset dry→wet crossfade tracks the envelope ATTACK: the live dry
+    // fades back to the steady blend over the same time the frozen pad takes to
+    // attack in — the most natural pairing. (0 ms attack ⇒ instant hand-over.)
     const float xfade_dec = 1.0f /
-        std::max(1.0f, xfade_ms * 0.001f * sr);
+        std::max(1.0f, env_atk * 0.001f * sr);
 
     const double lfo_inc  = static_cast<double>(chorus_rate) / p->sample_rate;
     // det_speed range per sample: base_speed * 2^(±detune_ct/1200).
@@ -513,8 +512,8 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
         freeze_sig *= env_g;
 
         // Advance the onset crossfade once per sample (shared L/R). xfade is held
-        // at 1 from onset until the new pad is ready, then decays to 0 over
-        // xfade_ms, fading the boosted dry back to the steady equal-power blend.
+        // at 1 from onset until the new pad is ready, then decays to 0 over the
+        // envelope ATTACK time, fading the boosted dry back to the steady blend.
         if (p->xfade_run)
             p->xfade = std::max(0.0f, p->xfade - xfade_dec);
         const float xf    = p->xfade;

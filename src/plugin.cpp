@@ -56,11 +56,9 @@ enum Port : uint32_t {
     P_HN_EVEN_ODD    = 31,   // H+N timbre: even-harmonic   [-1 – 1]
     P_HN_NOISE       = 32,   // H+N timbre: noise / air     [0 – 1]
     P_HN_WIDTH       = 33,   // H+N stereo width            [0 – 1]
-    P_XFADE_MS       = 34,   // onset dry→wet crossfade ms  [0 – 2000]
-    P_COUNT          = 35
+    P_COUNT          = 34
 #else
-    P_XFADE_MS       = 29,   // onset dry→wet crossfade ms  [0 – 2000]
-    P_COUNT          = 30
+    P_COUNT          = 29
 #endif
 };
 
@@ -157,7 +155,6 @@ static void run(LV2_Handle handle, uint32_t n_samples)
         0.0f,
 #endif
         ctl(p, P_DRY_LEVEL),
-        ctl(p, P_XFADE_MS),
 #ifdef MEGALO_HN_SYNTH
         ctl(p, P_HN_BRIGHTNESS),
         ctl(p, P_HN_DAMPING),
