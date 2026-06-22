@@ -208,6 +208,14 @@ void megalo_dsp_reset(MegaloDsp* p)
     p->hn_needs_analysis = false;
     p->hn_trigger_pending = false;
     p->hn_t_bright = p->hn_t_damp = p->hn_t_eo = p->hn_t_noise = 1e9f;
+    // Clear the additive voices too (idle = no active notes) so a reset can
+    // never leave a stale chord behind. Analysis re-seeds them on the next loop.
+    const MultiHNState hn_empty{};
+    const float hn_sr = static_cast<float>(p->sample_rate);
+    p->hn_v0.reset(hn_empty, hn_sr);
+    p->hn_vd.reset(hn_empty, hn_sr);
+    p->hn_v1.reset(hn_empty, hn_sr);
+    p->hn_v2.reset(hn_empty, hn_sr);
 #endif
 }
 
@@ -449,28 +457,33 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             // Polyphonic additive resynthesis of the frozen chord. The granular
             // players are skipped entirely on this path.
             if (stereo && hn_width > 0.0f) {
-                float l0, r0, ld, rd, l1, r1, l2, r2;
+                float l0, r0, l1, r1, l2, r2;
                 p->hn_v0.process_stereo(l0, r0, hn_width);
-                p->hn_vd.process_stereo(ld, rd, hn_width);
                 p->hn_v1.process_stereo(l1, r1, hn_width);
                 p->hn_v2.process_stereo(l2, r2, hn_width);
                 // Base + blended detuned copy (detune_blend = amount injected).
-                const float base_l = detune_en
-                    ? l0 * (1.0f - detune_blend) + ld * detune_blend : l0;
-                const float base_r = detune_en
-                    ? r0 * (1.0f - detune_blend) + rd * detune_blend : r0;
+                // The detuned voice bank is only rendered when detune is on —
+                // its output is discarded otherwise, so skip the work.
+                float base_l = l0, base_r = r0;
+                if (detune_en) {
+                    float ld, rd;
+                    p->hn_vd.process_stereo(ld, rd, hn_width);
+                    base_l = l0 * (1.0f - detune_blend) + ld * detune_blend;
+                    base_r = r0 * (1.0f - detune_blend) + rd * detune_blend;
+                }
                 freeze_sig = base_l + (pitch1_en ? l1 * p1_lvl : 0.0f)
                                     + (pitch2_en ? l2 * p2_lvl : 0.0f);
                 hn_wet_r   = base_r + (pitch1_en ? r1 * p1_lvl : 0.0f)
                                     + (pitch2_en ? r2 * p2_lvl : 0.0f);
             } else {
                 const float h0 = p->hn_v0.process();
-                const float hd = p->hn_vd.process();
                 const float h1 = p->hn_v1.process();
                 const float h2 = p->hn_v2.process();
-                // Base + blended detuned copy (detune_blend = amount injected).
+                // Base + blended detuned copy; render the detuned bank only when
+                // detune is on (its output is discarded otherwise).
                 const float base = detune_en
-                    ? h0 * (1.0f - detune_blend) + hd * detune_blend : h0;
+                    ? h0 * (1.0f - detune_blend) + p->hn_vd.process() * detune_blend
+                    : h0;
                 freeze_sig = base + (pitch1_en ? h1 * p1_lvl : 0.0f)
                                   + (pitch2_en ? h2 * p2_lvl : 0.0f);
                 hn_wet_r = freeze_sig;   // centred
