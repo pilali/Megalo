@@ -2,59 +2,59 @@
 @prefix pset: <http://lv2plug.in/ns/ext/presets#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-<https://github.com/pilali/megalo>
+<https://github.com/pilali/megalo/hn>
     a lv2:Plugin ;
-    lv2:binary <megalo.so> ;
-    rdfs:seeAlso <megalo.ttl> .
+    lv2:binary <megaloHN.so> ;
+    rdfs:seeAlso <megaloHN.ttl> .
 
 <Clean_Sustain.ttl>
-    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    lv2:appliesTo <https://github.com/pilali/megalo/hn> ;
     a pset:Preset ;
     rdfs:seeAlso <Clean_Sustain.ttl> .
 
 <Octave_Pad.ttl>
-    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    lv2:appliesTo <https://github.com/pilali/megalo/hn> ;
     a pset:Preset ;
     rdfs:seeAlso <Octave_Pad.ttl> .
 
 <Shimmer.ttl>
-    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    lv2:appliesTo <https://github.com/pilali/megalo/hn> ;
     a pset:Preset ;
     rdfs:seeAlso <Shimmer.ttl> .
 
 <Choir.ttl>
-    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    lv2:appliesTo <https://github.com/pilali/megalo/hn> ;
     a pset:Preset ;
     rdfs:seeAlso <Choir.ttl> .
 
 <Cathedral.ttl>
-    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    lv2:appliesTo <https://github.com/pilali/megalo/hn> ;
     a pset:Preset ;
     rdfs:seeAlso <Cathedral.ttl> .
 
 <Drone.ttl>
-    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    lv2:appliesTo <https://github.com/pilali/megalo/hn> ;
     a pset:Preset ;
     rdfs:seeAlso <Drone.ttl> .
 
 <Glass.ttl>
-    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    lv2:appliesTo <https://github.com/pilali/megalo/hn> ;
     a pset:Preset ;
     rdfs:seeAlso <Glass.ttl> .
 
 <Sub_Bass.ttl>
-    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    lv2:appliesTo <https://github.com/pilali/megalo/hn> ;
     a pset:Preset ;
     rdfs:seeAlso <Sub_Bass.ttl> .
 
 <Octaver.ttl>
-    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    lv2:appliesTo <https://github.com/pilali/megalo/hn> ;
     a pset:Preset ;
     rdfs:seeAlso <Octaver.ttl> .
 
 <Frozen_Strings.ttl>
-    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    lv2:appliesTo <https://github.com/pilali/megalo/hn> ;
     a pset:Preset ;
     rdfs:seeAlso <Frozen_Strings.ttl> .
 
-<https://github.com/pilali/megalo> rdfs:seeAlso <modgui.ttl> .
+<https://github.com/pilali/megalo/hn> rdfs:seeAlso <modgui.ttl> .

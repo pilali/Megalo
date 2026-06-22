@@ -10,7 +10,8 @@ extern "C" {           /* indispensable : JUCE est du C++ */
 /* One value per control port, copied from LV2 ports / JUCE parameters.
    Raw values are accepted: the clamp happens inside megalo_dsp_process(),
    exactly as the LV2 run() used to do (same bounds, same order). Field
-   names mirror the .ttl symbols (idx 2..25). */
+   names mirror the .ttl symbols; the per-field comments give the LV2 index
+   (control ports run idx 2..28, plus the MegaloHN-only timbre ports 29..33). */
 typedef struct {
     float onset_threshold;   /* idx 2  [0 – 1]            */
     float sample_ms;         /* idx 3  [50 – 500]   ms    */
@@ -39,6 +40,16 @@ typedef struct {
     float pitch_mode;        /* pitch engine: <0.5 = granular, >=0.5 = phase   */
                              /* vocoder. Only honoured when the core is built  */
                              /* with MEGALO_PHASE_VOCODER (else always granular).*/
+    /* Shared dry/wet control (both Megalo and MegaloHN). The onset dry→wet
+       crossfade time is not a separate control — it follows env_attack. */
+    float dry_level;         /* idx 28 [0 – 2], 1 = neutral; gain on live dry    */
+    /* H+N timbre controls — only meaningful in the MegaloHN build (compiled
+       with MEGALO_HN_SYNTH); the granular Megalo build leaves them at 0. */
+    float hn_brightness;     /* idx 29 [-1 – 1]  spectral tilt: dark ↔ bright   */
+    float hn_damping;        /* idx 30 [ 0 – 1]  high-partial roll-off          */
+    float hn_even_odd;       /* idx 31 [-1 – 1]  even-harmonic: hollow ↔ full   */
+    float hn_noise;          /* idx 32 [ 0 – 1]  noise / air amount             */
+    float hn_width;          /* idx 33 [ 0 – 1]  stereo width of the pad        */
 } MegaloParams;
 
 typedef struct MegaloDsp MegaloDsp;          /* opaque state */

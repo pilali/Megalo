@@ -8,6 +8,8 @@ on:
       - master
       - claude/lv2-mono-stereo-expansion-vr8cN
       - claude/exciting-darwin-r1yhi9
+      - claude/hn-polyphonic-analysis
+      - claude/megalo-unified
     tags: [ 'v*' ]
   pull_request:
     branches: [ master ]
@@ -32,7 +34,9 @@ jobs:
       - name: Build
         run: cmake --build juce/build --config Release --parallel
       - name: Verify universal binary
-        run: lipo -info "juce/build/Megalo_artefacts/Release/AU/Megalo.component/Contents/MacOS/Megalo" || true
+        run: |
+          lipo -info "juce/build/Megalo_artefacts/Release/AU/Megalo.component/Contents/MacOS/Megalo" || true
+          lipo -info "juce/build/MegaloHN_artefacts/Release/AU/MegaloHN.component/Contents/MacOS/MegaloHN" || true
       - uses: actions/upload-artifact@v4
         with:
           name: Megalo-macOS-universal
@@ -40,6 +44,9 @@ jobs:
             juce/build/Megalo_artefacts/Release/AU/Megalo.component
             juce/build/Megalo_artefacts/Release/VST3/Megalo.vst3
             juce/build/Megalo_artefacts/Release/Standalone/Megalo.app
+            juce/build/MegaloHN_artefacts/Release/AU/MegaloHN.component
+            juce/build/MegaloHN_artefacts/Release/VST3/MegaloHN.vst3
+            juce/build/MegaloHN_artefacts/Release/Standalone/MegaloHN.app
 
   windows:
     runs-on: windows-latest
@@ -55,3 +62,5 @@ jobs:
           path: |
             juce/build/Megalo_artefacts/Release/VST3/Megalo.vst3
             juce/build/Megalo_artefacts/Release/Standalone/Megalo.exe
+            juce/build/MegaloHN_artefacts/Release/VST3/MegaloHN.vst3
+            juce/build/MegaloHN_artefacts/Release/Standalone/MegaloHN.exe

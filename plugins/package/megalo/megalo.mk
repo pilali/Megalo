@@ -1,5 +1,9 @@
 ################################################################################
-# megalo — LV2 freeze/sustain effect for MOD Dwarf / Raspberry Pi 5
+# megalo — granular freeze/sustain LV2 effect for MOD Dwarf / Raspberry Pi 5
+#
+# Builds the stock Megalo plugin (granular pitch path, MEGALO_HN_SYNTH off) from
+# the shared megalo_dsp core. Its sibling MegaloHN (polyphonic harmonic+noise)
+# is packaged separately under plugins/package/megalohn.
 #
 # To update: set MEGALO_VERSION to the desired commit hash, then rebuild.
 ################################################################################
@@ -16,8 +20,10 @@ else
 MEGALO_PV_DEFS =
 endif
 
+# `megalo` target builds only the stock bundle (the Makefile's default `all`
+# would also build megaloHN, which is packaged separately).
 define MEGALO_BUILD_CMDS
-	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) \
+	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) megalo \
 		TARGET=moddwarf-new \
 		CXX="$(TARGET_CXX)" \
 		STRIP="$(TARGET_STRIP)" \

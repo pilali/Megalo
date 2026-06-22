@@ -364,10 +364,11 @@ void ThresholdLine::paint(juce::Graphics& g)
 // ════════════════════════════════════════════════════════════════════════════
 WindowPanel::WindowPanel(APVTS& a) : threshold(a, "onset_threshold"), apvts(a)
 {
+    // Grain Size / Crossfade are granular-only; the polyphonic H+N engine
+    // ignores them (they still drive the granular fallback for non-pitched
+    // input, so the LV2 ports/parameters are kept — just not surfaced here).
     topHandles.add(new TimeHandle(a, "sample_ms",      "SAMPLE", juce::Colour(0xfffff5e6)));
     topHandles.add(new TimeHandle(a, "attack_skip_ms", "SKIP",   juce::Colour(0xfffff5e6)));
-    topHandles.add(new TimeHandle(a, "grain_size_ms",  "SIZE",   juce::Colour(0xffffe1bf)));
-    topHandles.add(new TimeHandle(a, "grain_xfade_ms", "XFADE",  juce::Colour(0xffffe1bf)));
     for (auto* h : topHandles) addAndMakeVisible(h);
 
     envHandles.add(new EnvHandle(a, "env_attack",  "A"));
@@ -385,8 +386,10 @@ void WindowPanel::resized()
     const int halfH = b.getHeight() / 2;
     const int colW  = b.getWidth() / 4;
 
+    // Top handles spread across the full width (count varies with the engine).
+    const int topColW = b.getWidth() / juce::jmax(1, topHandles.size());
     for (int i = 0; i < topHandles.size(); ++i)
-        topHandles[i]->setBounds(i * colW, 0, colW, halfH);
+        topHandles[i]->setBounds(i * topColW, 0, topColW, halfH);
     for (int i = 0; i < envHandles.size(); ++i)
         envHandles[i]->setBounds(i * colW, halfH, colW, b.getHeight() - halfH);
 
@@ -504,6 +507,13 @@ MegaloEditor::MegaloEditor(MegaloAudioProcessor& p)
     addKnob("filter_q",     "Q");       // 8
     addKnob("base_pitch",   "BASE");    // 9  GLOBAL
     addKnob("blend",        "BLEND");   // 10
+#ifdef MEGALO_HN_SYNTH
+    addKnob("hn_brightness","BRIGHT");  // 11 TIMBRE (MegaloHN only)
+    addKnob("hn_damping",   "DAMP");    // 12
+    addKnob("hn_even_odd",  "EVEN");    // 13
+    addKnob("hn_noise",     "NOISE");   // 14
+    addKnob("hn_width",     "WIDTH");   // 15
+#endif
 
     leds.add(new LedToggle(proc.apvts, "pitch1_enable"));
     leds.add(new LedToggle(proc.apvts, "pitch2_enable"));
@@ -513,7 +523,11 @@ MegaloEditor::MegaloEditor(MegaloAudioProcessor& p)
     addAndMakeVisible(filterType);
     addAndMakeVisible(pitchEngine);
 
+#ifdef MEGALO_HN_SYNTH
+    setSize(720, 470);   // extra row for TIMBRE
+#else
     setSize(720, 380);
+#endif
     startTimerHz(30);
 }
 
@@ -578,7 +592,7 @@ void MegaloEditor::paint(juce::Graphics& g)
         { "FILTER", 410, 166 }, { "GLOBAL", 584, 110 }
     };
     for (auto& gr : groups) {
-        juce::Rectangle<int> r(gr.x, 245, gr.w, 123);
+        juce::Rectangle<int> r(gr.x, 245, gr.w, 113);
         g.setColour(juce::Colours::black.withAlpha(0.18f));
         g.fillRoundedRectangle(r.toFloat(), 6.0f);
         g.setColour(megalo::kOrange);
@@ -586,6 +600,18 @@ void MegaloEditor::paint(juce::Graphics& g)
         g.drawText(gr.title, r.getX() + 8, r.getY() + 6, r.getWidth() - 26, 12,
                    juce::Justification::left, false);
     }
+#ifdef MEGALO_HN_SYNTH
+    // TIMBRE — full-width second row (MegaloHN only).
+    {
+        juce::Rectangle<int> r(26, 368, 668, 88);
+        g.setColour(juce::Colours::black.withAlpha(0.18f));
+        g.fillRoundedRectangle(r.toFloat(), 6.0f);
+        g.setColour(megalo::kOrange);
+        g.setFont(megalo::font(11.0f, true));
+        g.drawText("TIMBRE", r.getX() + 8, r.getY() + 6, r.getWidth() - 26, 12,
+                   juce::Justification::left, false);
+    }
+#endif
 }
 
 void MegaloEditor::resized()
@@ -628,4 +654,17 @@ void MegaloEditor::resized()
     knobs[8]->setBounds(fx, bodyY, knobW, knobH);
 
     layoutRow(584, 110, { 9, 10 }, 0);         // GLOBAL
+
+#ifdef MEGALO_HN_SYNTH
+    // TIMBRE — five knobs spread across the full-width second row.
+    {
+        const int tBodyY = 368 + 26;
+        const int n = 5, rowW = n * knobW + (n - 1) * gap;
+        int x = 26 + (668 - rowW) / 2;
+        for (int i = 11; i <= 15; ++i) {
+            knobs[i]->setBounds(x, tBodyY, knobW, knobH);
+            x += knobW + gap;
+        }
+    }
+#endif
 }

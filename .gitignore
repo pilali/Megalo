@@ -1,8 +1,10 @@
 # Build outputs
 megalo.lv2/megalo.so
+megaloHN.lv2/megaloHN.so
 build/
 
 # Editor / OS
 .DS_Store
 *.swp
 *~
+build_hn/

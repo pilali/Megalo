@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "megalo_presets.h"
 
 using APVTS = juce::AudioProcessorValueTreeState;
 using Range = juce::NormalisableRange<float>;
@@ -53,6 +54,18 @@ APVTS::ParameterLayout MegaloAudioProcessor::createLayout()
     // matches the LV2 MOD/native sound) and the phase vocoder.
     p.add(std::make_unique<AC>(pid("pitch_mode"), "Pitch Engine",
                                juce::StringArray { "Granular", "Phase Vocoder" }, 0));
+    // Dry Level — gain on the latency-mask dry-fill driving the dry→wet
+    // crossfade on each onset. 1.0 = neutral. Permanent control in both builds.
+    p.add(std::make_unique<AF>(pid("dry_level"), "Dry Level", Range(0.0f, 2.0f), 1.0f));
+
+#ifdef MEGALO_HN_SYNTH
+    // H+N timbre controls (MegaloHN build only).
+    p.add(std::make_unique<AF>(pid("hn_brightness"), "Brightness", Range(-1.0f, 1.0f), 0.0f));
+    p.add(std::make_unique<AF>(pid("hn_damping"),    "Damping",    Range( 0.0f, 1.0f), 0.0f));
+    p.add(std::make_unique<AF>(pid("hn_even_odd"),   "Even/Odd",   Range(-1.0f, 1.0f), 0.0f));
+    p.add(std::make_unique<AF>(pid("hn_noise"),      "Noise",      Range( 0.0f, 1.0f), 0.4f));
+    p.add(std::make_unique<AF>(pid("hn_width"),      "Stereo Width", Range(0.0f, 1.0f), 0.3f));
+#endif
 
     return p;
 }
@@ -89,6 +102,14 @@ MegaloAudioProcessor::MegaloAudioProcessor()
     pPitch1En    = raw("pitch1_enable");
     pPitch2En    = raw("pitch2_enable");
     pPitchMode   = raw("pitch_mode");
+    pDryLevel    = raw("dry_level");
+#ifdef MEGALO_HN_SYNTH
+    pHnBright    = raw("hn_brightness");
+    pHnDamp      = raw("hn_damping");
+    pHnEvenOdd   = raw("hn_even_odd");
+    pHnNoise     = raw("hn_noise");
+    pHnWidth     = raw("hn_width");
+#endif
 }
 
 MegaloAudioProcessor::~MegaloAudioProcessor()
@@ -135,7 +156,12 @@ void MegaloAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         pFiltType->load(), pFiltCutoff->load(), pFiltQ->load(),
         pEnvAtk->load(), pEnvDcy->load(), pEnvSus->load(), pEnvRel->load(),
         pDetuneEn->load(), pPitch1En->load(), pPitch2En->load(),
-        pPitchMode->load()
+        pPitchMode->load(),
+        pDryLevel->load(),
+#ifdef MEGALO_HN_SYNTH
+        pHnBright->load(), pHnDamp->load(), pHnEvenOdd->load(),
+        pHnNoise->load(), pHnWidth->load()
+#endif
     };
 
     // Mono engine (guitar): sum the input to mono, process once, fan out.
@@ -172,6 +198,33 @@ void MegaloAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
 juce::AudioProcessorEditor* MegaloAudioProcessor::createEditor()
 {
     return new MegaloEditor(*this);
+}
+
+// ── Factory presets ────────────────────────────────────────────────────────
+// Unified with the LV2 .ttl presets (juce/megalo_presets.h). Each preset is a
+// list of {symbol, value} pairs; values are applied through the matching APVTS
+// parameter so host automation and the editor stay in sync. The HN-only timbre
+// parameters are present in the table only for the MegaloHN build.
+int MegaloAudioProcessor::getNumPrograms() { return megalo::kNumPresets; }
+
+const juce::String MegaloAudioProcessor::getProgramName(int index)
+{
+    if (index < 0 || index >= megalo::kNumPresets) return {};
+    return megalo::kPresets[index].name;
+}
+
+void MegaloAudioProcessor::setCurrentProgram(int index)
+{
+    if (index < 0 || index >= megalo::kNumPresets) return;
+    currentProgram = index;
+
+    const auto& preset = megalo::kPresets[index];
+    for (int i = 0; i < preset.numParams; ++i)
+    {
+        const auto& pp = preset.params[i];
+        if (auto* param = apvts.getParameter(pp.symbol))
+            param->setValueNotifyingHost(param->convertTo0to1(pp.value));
+    }
 }
 
 void MegaloAudioProcessor::getStateInformation(juce::MemoryBlock& dest)

@@ -6,58 +6,67 @@
 @prefix state: <http://lv2plug.in/ns/ext/state#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-<Good.ttl>
+<Drone.ttl>
 	a pset:Preset ;
 	lv2:appliesTo <https://github.com/pilali/megalo> ;
-	rdfs:label "Good" ;
+	rdfs:label "Drone" ;
 	lv2:port [
 		lv2:symbol "attack_skip_ms" ;
-		pset:value 126.953125
+		pset:value 100.0
 	] , [
 		lv2:symbol "base_pitch" ;
-		pset:value 0.0
+		pset:value -12.0
 	] , [
 		lv2:symbol "blend" ;
-		pset:value 0.80000001
+		pset:value 0.95
 	] , [
 		lv2:symbol "chorus_rate" ;
-		pset:value 1.823717
+		pset:value 0.3
 	] , [
 		lv2:symbol "detune_blend" ;
-		pset:value 0.34877199
+		pset:value 0.3
 	] , [
 		lv2:symbol "detune_cents" ;
-		pset:value 41.9084816
+		pset:value 15.0
+	] , [
+		lv2:symbol "detune_enable" ;
+		pset:value 1.0
+	] , [
+		lv2:symbol "dry_level" ;
+		pset:value 0.8
 	] , [
 		lv2:symbol "env_attack" ;
-		pset:value 500.0
+		pset:value 600.0
 	] , [
 		lv2:symbol "env_decay" ;
-		pset:value 200.0
+		pset:value 400.0
 	] , [
 		lv2:symbol "env_release" ;
-		pset:value 500.0
+		pset:value 6000.0
 	] , [
 		lv2:symbol "env_sustain" ;
 		pset:value 1.0
 	] , [
 		lv2:symbol "filter_cutoff" ;
-		pset:value 3000.0
+		pset:value 1200.0
 	] , [
 		lv2:symbol "filter_q" ;
-		pset:value 0.69999999
+		pset:value 0.8
 	] , [
 		lv2:symbol "filter_type" ;
 		pset:value 0.0
 	] , [
 		lv2:symbol "grain_size_ms" ;
-		pset:value 200.0
+		pset:value 180.0
 	] , [
 		lv2:symbol "grain_xfade_ms" ;
-		pset:value 30.71149635
+		pset:value 70.0
 	] , [
 		lv2:symbol "onset_threshold" ;
-		pset:value 0.079799
+		pset:value 0.15
+	] , [
+		lv2:symbol "pitch1_enable" ;
+		pset:value 1.0
 	] , [
 		lv2:symbol "pitch1_level" ;
 		pset:value 0.5
@@ -65,13 +74,15 @@
 		lv2:symbol "pitch1_semi" ;
 		pset:value -12.0
 	] , [
+		lv2:symbol "pitch2_enable" ;
+		pset:value 1.0
+	] , [
 		lv2:symbol "pitch2_level" ;
-		pset:value 0.0
+		pset:value 0.3
 	] , [
 		lv2:symbol "pitch2_semi" ;
-		pset:value 0.0
+		pset:value -24.0
 	] , [
 		lv2:symbol "sample_ms" ;
-		pset:value 238.0
+		pset:value 360.0
 	] .
-

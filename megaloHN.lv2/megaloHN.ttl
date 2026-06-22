@@ -5,10 +5,10 @@
 @prefix pprops: <http://lv2plug.in/ns/ext/port-props#> .
 @prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
 
-<https://github.com/pilali/megalo>
+<https://github.com/pilali/megalo/hn>
     a lv2:Plugin, lv2:EffectPlugin ;
 
-    doap:name    "Megalo" ;
+    doap:name    "MegaloHN" ;
     doap:license <https://spdx.org/licenses/GPL-3.0-or-later.html> ;
 
     lv2:optionalFeature lv2:hardRTCapable ;
@@ -307,9 +307,7 @@
         lv2:portProperty lv2:connectionOptional
     ] ,
 
-    # ── Dry level (gain on the live dry signal) ──────────────────────────
-    # 1.0 = neutral. The dry is mixed against the frozen wet by Blend
-    # (equal-power) and momentarily boosted to full over the onset crossfade.
+    # ── Dry level (dry→wet crossfade gain, both builds) ──────────────────
     [
         a lv2:InputPort, lv2:ControlPort ;
         lv2:index 28 ;
@@ -318,4 +316,51 @@
         lv2:default 1.0 ;
         lv2:minimum 0.0 ;
         lv2:maximum 2.0 ;
+    ] ,
+
+    # ── H+N timbre controls (MegaloHN) ───────────────────────────────────
+    [
+        a lv2:InputPort, lv2:ControlPort ;
+        lv2:index 29 ;
+        lv2:symbol "hn_brightness" ;
+        lv2:name   "Brightness" ;
+        lv2:default 0.0 ;
+        lv2:minimum -1.0 ;
+        lv2:maximum 1.0 ;
+    ] ,
+    [
+        a lv2:InputPort, lv2:ControlPort ;
+        lv2:index 30 ;
+        lv2:symbol "hn_damping" ;
+        lv2:name   "Damping" ;
+        lv2:default 0.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ;
+    ] ,
+    [
+        a lv2:InputPort, lv2:ControlPort ;
+        lv2:index 31 ;
+        lv2:symbol "hn_even_odd" ;
+        lv2:name   "Even/Odd" ;
+        lv2:default 0.0 ;
+        lv2:minimum -1.0 ;
+        lv2:maximum 1.0 ;
+    ] ,
+    [
+        a lv2:InputPort, lv2:ControlPort ;
+        lv2:index 32 ;
+        lv2:symbol "hn_noise" ;
+        lv2:name   "Noise" ;
+        lv2:default 0.4 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ;
+    ] ,
+    [
+        a lv2:InputPort, lv2:ControlPort ;
+        lv2:index 33 ;
+        lv2:symbol "hn_width" ;
+        lv2:name   "Stereo Width" ;
+        lv2:default 0.3 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ;
     ] .

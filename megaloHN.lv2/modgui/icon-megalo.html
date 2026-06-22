@@ -1,0 +1,436 @@
+<div class="mod-pedal megalo-panel{{{cns}}}">
+
+    <div mod-role="drag-handle" class="mod-drag-handle"></div>
+
+    <!-- Brand / master bypass: click the MEGALO logo to enable/disable -->
+    <div class="megalo-logo" mod-role="bypass" title="Enable / Disable">
+        <span class="megalo-logo-text">MEGALO</span>
+        <div class="megalo-logo-light" mod-role="bypass-light"></div>
+    </div>
+
+    <!-- Time-axis ruler (0..500 ms) sitting just above the orange
+         window. Major ticks every 100 ms, minor every 50 ms. -->
+    <div class="megalo-timescale">
+        <div class="megalo-timescale-tick" style="left:0%"></div>
+        <div class="megalo-timescale-tick minor" style="left:10%"></div>
+        <div class="megalo-timescale-tick" style="left:20%"></div>
+        <div class="megalo-timescale-tick minor" style="left:30%"></div>
+        <div class="megalo-timescale-tick" style="left:40%"></div>
+        <div class="megalo-timescale-tick minor" style="left:50%"></div>
+        <div class="megalo-timescale-tick" style="left:60%"></div>
+        <div class="megalo-timescale-tick minor" style="left:70%"></div>
+        <div class="megalo-timescale-tick" style="left:80%"></div>
+        <div class="megalo-timescale-tick minor" style="left:90%"></div>
+        <div class="megalo-timescale-tick" style="left:100%"></div>
+        <span class="megalo-timescale-label start" style="left:0%">0</span>
+        <span class="megalo-timescale-label" style="left:20%">100</span>
+        <span class="megalo-timescale-label" style="left:40%">200</span>
+        <span class="megalo-timescale-label" style="left:60%">300</span>
+        <span class="megalo-timescale-label" style="left:80%">400</span>
+        <span class="megalo-timescale-label end" style="left:100%">500 ms</span>
+    </div>
+
+    <!-- ── Central orange window ─────────────────────────────────────── -->
+    <div class="megalo-window">
+
+        <svg class="megalo-waveform" viewBox="0 0 600 160" preserveAspectRatio="none">
+            <path d="M0,80
+                     C20,40 30,120 50,80
+                     C70,30 85,135 110,80
+                     C130,55 150,110 175,80
+                     C200,20 220,145 250,80
+                     C275,50 295,115 320,80
+                     C345,35 365,130 395,80
+                     C420,60 440,100 465,80
+                     C490,45 510,120 535,80
+                     C560,65 580,95 600,80
+                     L600,80 L0,80 Z"
+                  fill="#2a2d31" opacity="0.85" />
+        </svg>
+
+        <!-- Horizontal white axis line, mid-height of the window -->
+        <div class="megalo-midline"></div>
+
+        <!-- Onset threshold: horizontal line driven by JS. data-min/data-max
+             are baked in since MOD-UI's 'start' event ships ports without
+             ranges. -->
+        <div class="megalo-threshold" data-handle="onset_threshold"
+             data-min="0" data-max="1" title="Onset Threshold">
+            <span class="megalo-threshold-value" data-handle-value="onset_threshold"></span>
+            <div class="megalo-hit megalo-hit-passive"
+                 mod-role="input-control-port"
+                 mod-port-symbol="onset_threshold"
+                 mod-widget-rotation="270"></div>
+        </div>
+
+        <!-- Functional grouping bracket for the top row.
+             WINDOW = SAMPLE + SKIP (capture window definition). The granular
+             GRAIN/XFADE handles are not surfaced: the polyphonic H+N engine
+             ignores them (they remain as ports for the granular fallback). -->
+        <div class="megalo-brackets">
+            <div class="megalo-bracket" style="left:0; width:100%">WINDOW</div>
+        </div>
+
+        <!-- ── Top handles: time-domain markers ───────────────────────
+             Each handle is a vertical line that slides LEFT/RIGHT
+             inside its slot, with a circle handle at the top. This
+             matches the time-on-x-axis mental model of these params. -->
+        <div class="megalo-handles megalo-handles-top">
+
+            <div class="megalo-handle megalo-handle-sample" data-handle="sample_ms"
+                 data-axis="x" data-min="50" data-max="500" title="Sample Length">
+                <div class="megalo-handle-track"></div>
+                <div class="megalo-handle-knob"></div>
+                <span class="megalo-handle-label">SAMPLE</span>
+                <span class="megalo-handle-value" data-handle-value="sample_ms"></span>
+                <div class="megalo-hit megalo-hit-passive"
+                     mod-role="input-control-port"
+                     mod-port-symbol="sample_ms"
+                     mod-widget-rotation="270"></div>
+            </div>
+
+            <div class="megalo-handle megalo-handle-sample" data-handle="attack_skip_ms"
+                 data-axis="x" data-min="0" data-max="500" title="Attack Skip">
+                <div class="megalo-handle-track"></div>
+                <div class="megalo-handle-knob"></div>
+                <span class="megalo-handle-label">SKIP</span>
+                <span class="megalo-handle-value" data-handle-value="attack_skip_ms"></span>
+                <div class="megalo-hit megalo-hit-passive"
+                     mod-role="input-control-port"
+                     mod-port-symbol="attack_skip_ms"
+                     mod-widget-rotation="270"></div>
+            </div>
+
+        </div>
+
+        <!-- ── Bottom handles: envelope ADSR (vertical drag) ───────────
+             The envelope SVG is drawn underneath the handle columns;
+             its breakpoints follow the current A/D/S/R values in
+             real time (see updateEnvelope() in script-megalo.js). -->
+        <div class="megalo-handles megalo-handles-bottom">
+
+            <svg class="megalo-envelope" viewBox="0 0 1000 100" preserveAspectRatio="none">
+                <path class="megalo-env-fill" d="" />
+                <path class="megalo-env-line" d="" />
+            </svg>
+
+            <div class="megalo-handle megalo-handle-env" data-handle="env_attack"
+                 data-axis="y-up" data-min="0" data-max="5000" title="Attack">
+                <div class="megalo-handle-track"></div>
+                <div class="megalo-handle-knob"></div>
+                <span class="megalo-handle-label">A</span>
+                <span class="megalo-handle-value" data-handle-value="env_attack"></span>
+                <div class="megalo-hit megalo-hit-passive"
+                     mod-role="input-control-port"
+                     mod-port-symbol="env_attack"
+                     mod-widget-rotation="270"></div>
+            </div>
+
+            <div class="megalo-handle megalo-handle-env" data-handle="env_decay"
+                 data-axis="y-up" data-min="0" data-max="5000" title="Decay">
+                <div class="megalo-handle-track"></div>
+                <div class="megalo-handle-knob"></div>
+                <span class="megalo-handle-label">D</span>
+                <span class="megalo-handle-value" data-handle-value="env_decay"></span>
+                <div class="megalo-hit megalo-hit-passive"
+                     mod-role="input-control-port"
+                     mod-port-symbol="env_decay"
+                     mod-widget-rotation="270"></div>
+            </div>
+
+            <div class="megalo-handle megalo-handle-env" data-handle="env_sustain"
+                 data-axis="y-up" data-min="0" data-max="1" title="Sustain">
+                <div class="megalo-handle-track"></div>
+                <div class="megalo-handle-knob"></div>
+                <span class="megalo-handle-label">S</span>
+                <span class="megalo-handle-value" data-handle-value="env_sustain"></span>
+                <div class="megalo-hit megalo-hit-passive"
+                     mod-role="input-control-port"
+                     mod-port-symbol="env_sustain"
+                     mod-widget-rotation="270"></div>
+            </div>
+
+            <div class="megalo-handle megalo-handle-env" data-handle="env_release"
+                 data-axis="y-up" data-min="0" data-max="10000" title="Release">
+                <div class="megalo-handle-track"></div>
+                <div class="megalo-handle-knob"></div>
+                <span class="megalo-handle-label">R</span>
+                <span class="megalo-handle-value" data-handle-value="env_release"></span>
+                <div class="megalo-hit megalo-hit-passive"
+                     mod-role="input-control-port"
+                     mod-port-symbol="env_release"
+                     mod-widget-rotation="270"></div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- ── Knob / switch row below the window ─────────────────────── -->
+    <div class="megalo-controls">
+
+      <div class="megalo-controls-row">
+
+        <!-- Voice 1 -->
+        <div class="megalo-group">
+            <div class="megalo-group-head">
+                <span class="megalo-group-title">VOICE 1</span>
+                <div class="megalo-led"
+                     mod-role="input-control-port"
+                     mod-widget="switch"
+                     mod-port-symbol="pitch1_enable"
+                     title="Voice 1 Enable"></div>
+            </div>
+            <div class="megalo-group-body">
+                <div class="megalo-knob" title="Voice 1 Pitch">
+                    <div class="megalo-knob-dial"
+                         mod-role="input-control-port"
+                         mod-port-symbol="pitch1_semi"
+                         mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">PITCH</span>
+                </div>
+                <div class="megalo-knob" title="Voice 1 Level">
+                    <div class="megalo-knob-dial"
+                         mod-role="input-control-port"
+                         mod-port-symbol="pitch1_level"
+                         mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">LEVEL</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Voice 2 -->
+        <div class="megalo-group">
+            <div class="megalo-group-head">
+                <span class="megalo-group-title">VOICE 2</span>
+                <div class="megalo-led"
+                     mod-role="input-control-port"
+                     mod-widget="switch"
+                     mod-port-symbol="pitch2_enable"
+                     title="Voice 2 Enable"></div>
+            </div>
+            <div class="megalo-group-body">
+                <div class="megalo-knob" title="Voice 2 Pitch">
+                    <div class="megalo-knob-dial"
+                         mod-role="input-control-port"
+                         mod-port-symbol="pitch2_semi"
+                         mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">PITCH</span>
+                </div>
+                <div class="megalo-knob" title="Voice 2 Level">
+                    <div class="megalo-knob-dial"
+                         mod-role="input-control-port"
+                         mod-port-symbol="pitch2_level"
+                         mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">LEVEL</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detune / Chorus -->
+        <div class="megalo-group">
+            <div class="megalo-group-head">
+                <span class="megalo-group-title">DETUNE</span>
+                <div class="megalo-led"
+                     mod-role="input-control-port"
+                     mod-widget="switch"
+                     mod-port-symbol="detune_enable"
+                     title="Detune Enable"></div>
+            </div>
+            <div class="megalo-group-body">
+                <div class="megalo-knob" title="Detune">
+                    <div class="megalo-knob-dial"
+                         mod-role="input-control-port"
+                         mod-port-symbol="detune_cents"
+                         mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">CENTS</span>
+                </div>
+                <div class="megalo-knob" title="Chorus Rate">
+                    <div class="megalo-knob-dial"
+                         mod-role="input-control-port"
+                         mod-port-symbol="chorus_rate"
+                         mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">RATE</span>
+                </div>
+                <div class="megalo-knob" title="Detune Blend">
+                    <div class="megalo-knob-dial"
+                         mod-role="input-control-port"
+                         mod-port-symbol="detune_blend"
+                         mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">BLEND</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter -->
+        <div class="megalo-group">
+            <div class="megalo-group-head">
+                <span class="megalo-group-title">FILTER</span>
+            </div>
+            <div class="megalo-group-body">
+                <div class="megalo-switch3" data-handle="filter_type"
+                     data-min="0" data-max="2" title="Filter Type">
+                    <div class="megalo-switch3-opt" data-value="0">LP</div>
+                    <div class="megalo-switch3-opt" data-value="1">HP</div>
+                    <div class="megalo-switch3-opt" data-value="2">BP</div>
+                    <div class="megalo-hit megalo-hit-passive"
+                         mod-role="input-control-port"
+                         mod-port-symbol="filter_type"
+                         mod-widget-rotation="270"></div>
+                </div>
+                <div class="megalo-knob" title="Filter Cutoff">
+                    <div class="megalo-knob-dial"
+                         mod-role="input-control-port"
+                         mod-port-symbol="filter_cutoff"
+                         mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">CUTOFF</span>
+                </div>
+                <div class="megalo-knob" title="Filter Q">
+                    <div class="megalo-knob-dial"
+                         mod-role="input-control-port"
+                         mod-port-symbol="filter_q"
+                         mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">Q</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Global -->
+        <div class="megalo-group">
+            <div class="megalo-group-head">
+                <span class="megalo-group-title">GLOBAL</span>
+            </div>
+            <div class="megalo-group-body">
+                <div class="megalo-knob" title="Base Pitch">
+                    <div class="megalo-knob-dial"
+                         mod-role="input-control-port"
+                         mod-port-symbol="base_pitch"
+                         mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">BASE</span>
+                </div>
+                <div class="megalo-knob" title="Sample / Grain Blend">
+                    <div class="megalo-knob-dial"
+                         mod-role="input-control-port"
+                         mod-port-symbol="blend"
+                         mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">BLEND</span>
+                </div>
+            </div>
+        </div>
+
+      </div><!-- /controls-row 1 -->
+
+      <div class="megalo-controls-row">
+
+        <!-- Timbre — shapes the polyphonic H+N resynthesis -->
+        <div class="megalo-group megalo-group-wide">
+            <div class="megalo-group-head">
+                <span class="megalo-group-title">TIMBRE</span>
+            </div>
+            <div class="megalo-group-body">
+                <div class="megalo-knob" title="Brightness (spectral tilt)">
+                    <div class="megalo-knob-dial" mod-role="input-control-port"
+                         mod-port-symbol="hn_brightness" mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">BRIGHT</span>
+                </div>
+                <div class="megalo-knob" title="Damping (high roll-off)">
+                    <div class="megalo-knob-dial" mod-role="input-control-port"
+                         mod-port-symbol="hn_damping" mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">DAMP</span>
+                </div>
+                <div class="megalo-knob" title="Even/Odd harmonic balance">
+                    <div class="megalo-knob-dial" mod-role="input-control-port"
+                         mod-port-symbol="hn_even_odd" mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">EVEN</span>
+                </div>
+                <div class="megalo-knob" title="Noise / air amount">
+                    <div class="megalo-knob-dial" mod-role="input-control-port"
+                         mod-port-symbol="hn_noise" mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">NOISE</span>
+                </div>
+                <div class="megalo-knob" title="Stereo width">
+                    <div class="megalo-knob-dial" mod-role="input-control-port"
+                         mod-port-symbol="hn_width" mod-widget-rotation="270">
+                        <div class="megalo-knob-pointer"></div>
+                    </div>
+                    <span class="megalo-knob-label">WIDTH</span>
+                </div>
+            </div>
+        </div>
+
+      </div><!-- /controls-row 2 -->
+
+    </div>
+
+    <!-- Floating value tooltip shown during a drag. Positioned by JS
+         from the global cursor coordinates. -->
+    <div class="megalo-tooltip"></div>
+
+</div>
+
+<!-- Audio I/O jacks — siblings of the panel; MOD-UI core positions
+     them at left:-88px / right:-87px outside the box. -->
+<div class="mod-pedal-input">
+    {{#effect.ports.audio.input}}
+    <div class="mod-input mod-input-disconnected" title="{{name}}" mod-role="input-audio-port" mod-port-symbol="{{symbol}}">
+        <div class="mod-pedal-input-image"></div>
+    </div>
+    {{/effect.ports.audio.input}}
+    {{#effect.ports.midi.input}}
+    <div class="mod-input mod-input-disconnected" title="{{name}}" mod-role="input-midi-port" mod-port-symbol="{{symbol}}">
+        <div class="mod-pedal-input-image"></div>
+    </div>
+    {{/effect.ports.midi.input}}
+    {{#effect.ports.cv.input}}
+    <div class="mod-input mod-input-disconnected" title="{{name}}" mod-role="input-cv-port" mod-port-symbol="{{symbol}}">
+        <div class="mod-pedal-input-image"></div>
+    </div>
+    {{/effect.ports.cv.input}}
+</div>
+<div class="mod-pedal-output">
+    {{#effect.ports.audio.output}}
+    <div class="mod-output mod-output-disconnected" title="{{name}}" mod-role="output-audio-port" mod-port-symbol="{{symbol}}">
+        <div class="mod-pedal-output-image"></div>
+    </div>
+    {{/effect.ports.audio.output}}
+    {{#effect.ports.midi.output}}
+    <div class="mod-output mod-output-disconnected" title="{{name}}" mod-role="output-midi-port" mod-port-symbol="{{symbol}}">
+        <div class="mod-pedal-output-image"></div>
+    </div>
+    {{/effect.ports.midi.output}}
+    {{#effect.ports.cv.output}}
+    <div class="mod-output mod-output-disconnected" title="{{name}}" mod-role="output-cv-port" mod-port-symbol="{{symbol}}">
+        <div class="mod-pedal-output-image"></div>
+    </div>
+    {{/effect.ports.cv.output}}
+</div>

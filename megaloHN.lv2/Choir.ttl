@@ -8,7 +8,7 @@
 
 <Choir.ttl>
 	a pset:Preset ;
-	lv2:appliesTo <https://github.com/pilali/megalo> ;
+	lv2:appliesTo <https://github.com/pilali/megalo/hn> ;
 	rdfs:label "Choir" ;
 	lv2:port [
 		lv2:symbol "attack_skip_ms" ;
@@ -85,4 +85,19 @@
 	] , [
 		lv2:symbol "sample_ms" ;
 		pset:value 220.0
+	] , [
+		lv2:symbol "hn_brightness" ;
+		pset:value 0.1
+	] , [
+		lv2:symbol "hn_damping" ;
+		pset:value 0.3
+	] , [
+		lv2:symbol "hn_even_odd" ;
+		pset:value 0.0
+	] , [
+		lv2:symbol "hn_noise" ;
+		pset:value 0.55
+	] , [
+		lv2:symbol "hn_width" ;
+		pset:value 0.6
 	] .
