@@ -123,6 +123,13 @@ struct MegaloDsp {
     PolyAdditiveSynth hn_v1;   // pitch voice 1 (+ detune LFO)
     PolyAdditiveSynth hn_v2;   // pitch voice 2
     bool hn_needs_analysis = false;
+    // MegaloHN anti-click: the additive voices only exist after the deferred
+    // analysis runs (the block following LoopReady). We therefore hold the
+    // freeze envelope at zero from LoopReady until then and trigger the attack
+    // only once the new chord is ready — so the stale previous chord never
+    // plays into the new attack and the dry-fill covers a clean dry→wet
+    // crossfade instead of a chord-swap discontinuity.
+    bool hn_trigger_pending = false;
     // Cached timbre controls so set_timbre() (pow/exp per partial) only re-runs
     // when a knob actually moves. Sentinel forces the first update.
     float hn_t_bright = 1e9f, hn_t_damp = 1e9f, hn_t_eo = 1e9f, hn_t_noise = 1e9f;
@@ -198,6 +205,7 @@ void megalo_dsp_reset(MegaloDsp* p)
 #ifdef MEGALO_HN_SYNTH
     p->hn_state          = MultiHNState{};
     p->hn_needs_analysis = false;
+    p->hn_trigger_pending = false;
     p->hn_t_bright = p->hn_t_damp = p->hn_t_eo = p->hn_t_noise = 1e9f;
 #endif
 }
@@ -335,6 +343,14 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
         }
         p->hn_needs_analysis = false;
     }
+    // The fresh chord (additive voices, or the granular fallback when no pitch
+    // was found) now exists → start the freeze attack from zero. Deferring it to
+    // here, rather than firing at LoopReady, is what removes the chord-swap click
+    // and lets the dry-fill crossfade cleanly into the wet.
+    if (p->hn_trigger_pending) {
+        p->envelope.trigger();
+        p->hn_trigger_pending = false;
+    }
     // Re-apply the timbre gains only when a control moved (or after analysis).
     if (p->hn_state.valid &&
         (hn_bright != p->hn_t_bright || hn_damp != p->hn_t_damp ||
@@ -391,16 +407,23 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             // recede below) ramps 0→1 cleanly — no step when the prior release
             // had not fully decayed.
             p->envelope.reset();
+#ifdef MEGALO_HN_SYNTH
+            // MegaloHN: the additive voices aren't analyzed/reset until the next
+            // block boundary. Keep the envelope at zero (stale chord stays
+            // silent, dry-fill covers at full) and defer the attack until the
+            // new chord exists — see hn_trigger_pending. The granular Megalo
+            // build attacks immediately, as before.
+            p->hn_needs_analysis  = true;   // analyze the fresh loop next block
+            p->hn_trigger_pending = true;
+#else
             p->envelope.trigger();
+#endif
             // New pad is ready → hand the dry-fill back to the pad's envelope.
             // Force full dry coverage now: the new loop attacks from zero, so the
             // dry must cover the hand-over (the gap left comp_level low while the
             // previous loop was still releasing); recovery recedes it as env_g rises.
             p->comp_level  = 1.0f;
             p->comp_target = 0.0f;
-#ifdef MEGALO_HN_SYNTH
-            p->hn_needs_analysis = true;   // analyze the fresh loop next block
-#endif
         }
 
         // LFO
