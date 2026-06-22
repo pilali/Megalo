@@ -32,6 +32,9 @@
 		lv2:symbol "detune_enable" ;
 		pset:value 0.0
 	] , [
+		lv2:symbol "dry_level" ;
+		pset:value 1.2
+	] , [
 		lv2:symbol "env_attack" ;
 		pset:value 5.0
 	] , [
@@ -82,9 +85,6 @@
 	] , [
 		lv2:symbol "sample_ms" ;
 		pset:value 100.0
-	] , [
-		lv2:symbol "dry_level" ;
-		pset:value 1.2
 	] , [
 		lv2:symbol "hn_brightness" ;
 		pset:value 0.0

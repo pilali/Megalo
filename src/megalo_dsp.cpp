@@ -226,8 +226,8 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
     const int   sample_ms     = std::clamp(static_cast<int>(p_->sample_ms), 50, 500);
     const int   attack_skip   = std::clamp(static_cast<int>(p_->attack_skip_ms), 0, 500);
     const float blend         = std::clamp(p_->blend,               0.0f,   1.0f);
-    // TEMPORARY tuning control: gain on the latency-mask dry-fill so the right
-    // dry level for the dry→wet crossfade can be found by ear.
+    // Dry level: gain on the latency-mask dry-fill that drives the dry→wet
+    // crossfade on each onset (1.0 = neutral). Permanent control in both builds.
     const float dry_level     = std::clamp(p_->dry_level,           0.0f,   2.0f);
     const int   grain_ms      = std::clamp(static_cast<int>(p_->grain_size_ms),    5, 200);
     const int   grain_samples = std::clamp((int)(sr * grain_ms * 0.001f), 16, FREEZE_MAX_SAMPLES);

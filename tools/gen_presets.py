@@ -29,9 +29,10 @@ HN_URI     = "https://github.com/pilali/megalo/hn"
 #   pitch_mode : JUCE-only runtime pitch-engine choice (0=Granular, 1=PhaseVoc);
 #                in LV2 the engine is selected at build time, so it is omitted
 #                from the .ttl but kept in the native table.
-#   hn   : MegaloHN-only timbre values (dry_level + the additive H+N controls).
-#          Tuned so each HN preset has a character of its own rather than
-#          mirroring the granular Megalo sound.
+#   hn   : MegaloHN-only additive timbre values, tuned so each HN preset has a
+#          character of its own rather than mirroring the granular Megalo sound.
+#          (dry_level is declared here for readability but is a shared control —
+#          see preset(), which moves it into the base set for both plugins.)
 #
 # base symbols (ranges mirror the .ttl):
 #   onset_threshold 0..1   sample_ms 50..500   attack_skip_ms 0..500
@@ -46,6 +47,12 @@ HN_URI     = "https://github.com/pilali/megalo/hn"
 #   hn_even_odd -1..1   hn_noise 0..1   hn_width 0..1
 
 def preset(name, base, pitch_mode, hn):
+    # dry_level is a shared control (both Megalo and MegaloHN), so it lives with
+    # the base params even though it is declared alongside the timbre values for
+    # readability in the table below.
+    base = dict(base)
+    hn = dict(hn)
+    base["dry_level"] = hn.pop("dry_level")
     return {"name": name, "base": base, "pitch_mode": pitch_mode, "hn": hn}
 
 PRESETS = [
@@ -174,13 +181,13 @@ PRESETS = [
 # existing hand-written presets) and the extra HN symbols (appended).
 BASE_ORDER = sorted([
     "attack_skip_ms", "base_pitch", "blend", "chorus_rate", "detune_blend",
-    "detune_cents", "detune_enable", "env_attack", "env_decay", "env_release",
-    "env_sustain", "filter_cutoff", "filter_q", "filter_type", "grain_size_ms",
-    "grain_xfade_ms", "onset_threshold", "pitch1_enable", "pitch1_level",
-    "pitch1_semi", "pitch2_enable", "pitch2_level", "pitch2_semi", "sample_ms",
+    "detune_cents", "detune_enable", "dry_level", "env_attack", "env_decay",
+    "env_release", "env_sustain", "filter_cutoff", "filter_q", "filter_type",
+    "grain_size_ms", "grain_xfade_ms", "onset_threshold", "pitch1_enable",
+    "pitch1_level", "pitch1_semi", "pitch2_enable", "pitch2_level",
+    "pitch2_semi", "sample_ms",
 ])
-HN_ORDER = ["dry_level", "hn_brightness", "hn_damping", "hn_even_odd",
-            "hn_noise", "hn_width"]
+HN_ORDER = ["hn_brightness", "hn_damping", "hn_even_odd", "hn_noise", "hn_width"]
 
 TTL_PREFIX = """\
 @prefix atom: <http://lv2plug.in/ns/ext/atom#> .

@@ -49,7 +49,7 @@ enum Port : uint32_t {
     P_PITCH2_EN      = 25,   // voice-2 on/off       [0, 1]
     P_TRIGGER_OUT    = 26,   // momentary onset pulse [0, 1] — output for GUI flash
     P_AUDIO_OUT_R    = 27,   // optional right output — connected ⇒ stereo path
-    P_DRY_LEVEL      = 28,   // TEMPORARY dry-fill gain [0 – 2] — crossfade tuning
+    P_DRY_LEVEL      = 28,   // dry-fill gain [0 – 2] — dry→wet crossfade level
 #ifdef MEGALO_HN_SYNTH
     P_HN_BRIGHTNESS  = 29,   // H+N timbre: spectral tilt   [-1 – 1]
     P_HN_DAMPING     = 30,   // H+N timbre: high roll-off   [0 – 1]

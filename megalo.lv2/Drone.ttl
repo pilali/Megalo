@@ -32,6 +32,9 @@
 		lv2:symbol "detune_enable" ;
 		pset:value 1.0
 	] , [
+		lv2:symbol "dry_level" ;
+		pset:value 0.8
+	] , [
 		lv2:symbol "env_attack" ;
 		pset:value 600.0
 	] , [

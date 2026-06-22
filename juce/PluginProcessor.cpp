@@ -54,6 +54,9 @@ APVTS::ParameterLayout MegaloAudioProcessor::createLayout()
     // matches the LV2 MOD/native sound) and the phase vocoder.
     p.add(std::make_unique<AC>(pid("pitch_mode"), "Pitch Engine",
                                juce::StringArray { "Granular", "Phase Vocoder" }, 0));
+    // Dry Level — gain on the latency-mask dry-fill driving the dry→wet
+    // crossfade on each onset. 1.0 = neutral. Permanent control in both builds.
+    p.add(std::make_unique<AF>(pid("dry_level"), "Dry Level", Range(0.0f, 2.0f), 1.0f));
 
 #ifdef MEGALO_HN_SYNTH
     // H+N timbre controls (MegaloHN build only).
@@ -99,6 +102,7 @@ MegaloAudioProcessor::MegaloAudioProcessor()
     pPitch1En    = raw("pitch1_enable");
     pPitch2En    = raw("pitch2_enable");
     pPitchMode   = raw("pitch_mode");
+    pDryLevel    = raw("dry_level");
 #ifdef MEGALO_HN_SYNTH
     pHnBright    = raw("hn_brightness");
     pHnDamp      = raw("hn_damping");
@@ -153,7 +157,7 @@ void MegaloAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         pEnvAtk->load(), pEnvDcy->load(), pEnvSus->load(), pEnvRel->load(),
         pDetuneEn->load(), pPitch1En->load(), pPitch2En->load(),
         pPitchMode->load(),
-        1.0f,   // dry_level: temporary LV2-only tuning control, neutral here
+        pDryLevel->load(),
 #ifdef MEGALO_HN_SYNTH
         pHnBright->load(), pHnDamp->load(), pHnEvenOdd->load(),
         pHnNoise->load(), pHnWidth->load()

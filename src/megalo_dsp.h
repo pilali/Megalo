@@ -40,7 +40,7 @@ typedef struct {
                              /* vocoder. Only honoured when the core is built  */
                              /* with MEGALO_PHASE_VOCODER (else always granular).*/
     /* Shared latency-mask dry-fill gain (both Megalo and MegaloHN). */
-    float dry_level;         /* idx 28 TEMPORARY [0 – 2], 1 = neutral; crossfade */
+    float dry_level;         /* idx 28 [0 – 2], 1 = neutral; dry→wet crossfade  */
     /* H+N timbre controls — only meaningful in the MegaloHN build (compiled
        with MEGALO_HN_SYNTH); the granular Megalo build leaves them at 0. */
     float hn_brightness;     /* idx 29 [-1 – 1]  spectral tilt: dark ↔ bright   */

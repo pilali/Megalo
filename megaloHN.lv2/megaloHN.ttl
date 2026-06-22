@@ -307,12 +307,12 @@
         lv2:portProperty lv2:connectionOptional
     ] ,
 
-    # ── TEMPORARY: dry-fill level (crossfade tuning, both builds) ────────
+    # ── Dry level (dry→wet crossfade gain, both builds) ──────────────────
     [
         a lv2:InputPort, lv2:ControlPort ;
         lv2:index 28 ;
         lv2:symbol "dry_level" ;
-        lv2:name   "Dry Level (temp)" ;
+        lv2:name   "Dry Level" ;
         lv2:default 1.0 ;
         lv2:minimum 0.0 ;
         lv2:maximum 2.0 ;

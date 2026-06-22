@@ -307,14 +307,14 @@
         lv2:portProperty lv2:connectionOptional
     ] ,
 
-    # ── TEMPORARY: dry-fill level (crossfade tuning) ─────────────────────
-    # Gain on the latency-mask dry-fill so the right dry level for the
-    # dry→wet crossfade can be dialled in by ear. To be removed once tuned.
+    # ── Dry level (dry→wet crossfade gain) ───────────────────────────────
+    # Gain on the latency-mask dry-fill that covers the capture gap on each
+    # onset, crossfading the live dry into the frozen wet. 1.0 = neutral.
     [
         a lv2:InputPort, lv2:ControlPort ;
         lv2:index 28 ;
         lv2:symbol "dry_level" ;
-        lv2:name   "Dry Level (temp)" ;
+        lv2:name   "Dry Level" ;
         lv2:default 1.0 ;
         lv2:minimum 0.0 ;
         lv2:maximum 2.0 ;
