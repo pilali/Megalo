@@ -49,16 +49,18 @@ enum Port : uint32_t {
     P_PITCH2_EN      = 25,   // voice-2 on/off       [0, 1]
     P_TRIGGER_OUT    = 26,   // momentary onset pulse [0, 1] — output for GUI flash
     P_AUDIO_OUT_R    = 27,   // optional right output — connected ⇒ stereo path
-    P_DRY_LEVEL      = 28,   // dry-fill gain [0 – 2] — dry→wet crossfade level
+    P_DRY_LEVEL      = 28,   // live-dry gain [0 – 2] (1 = neutral)
 #ifdef MEGALO_HN_SYNTH
     P_HN_BRIGHTNESS  = 29,   // H+N timbre: spectral tilt   [-1 – 1]
     P_HN_DAMPING     = 30,   // H+N timbre: high roll-off   [0 – 1]
     P_HN_EVEN_ODD    = 31,   // H+N timbre: even-harmonic   [-1 – 1]
     P_HN_NOISE       = 32,   // H+N timbre: noise / air     [0 – 1]
     P_HN_WIDTH       = 33,   // H+N stereo width            [0 – 1]
-    P_COUNT          = 34
+    P_XFADE_MS       = 34,   // onset dry→wet crossfade ms  [0 – 2000]
+    P_COUNT          = 35
 #else
-    P_COUNT          = 29
+    P_XFADE_MS       = 29,   // onset dry→wet crossfade ms  [0 – 2000]
+    P_COUNT          = 30
 #endif
 };
 
@@ -155,6 +157,7 @@ static void run(LV2_Handle handle, uint32_t n_samples)
         0.0f,
 #endif
         ctl(p, P_DRY_LEVEL),
+        ctl(p, P_XFADE_MS),
 #ifdef MEGALO_HN_SYNTH
         ctl(p, P_HN_BRIGHTNESS),
         ctl(p, P_HN_DAMPING),

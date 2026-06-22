@@ -57,6 +57,9 @@ APVTS::ParameterLayout MegaloAudioProcessor::createLayout()
     // Dry Level — gain on the latency-mask dry-fill driving the dry→wet
     // crossfade on each onset. 1.0 = neutral. Permanent control in both builds.
     p.add(std::make_unique<AF>(pid("dry_level"), "Dry Level", Range(0.0f, 2.0f), 1.0f));
+    // Crossfade — onset dry→wet fade time. After each new freeze the output is
+    // held on the live dry then fades to the steady blend over this time.
+    p.add(std::make_unique<AF>(pid("xfade_ms"), "Crossfade", Range(0.0f, 2000.0f), 100.0f, FA{}.withLabel("ms")));
 
 #ifdef MEGALO_HN_SYNTH
     // H+N timbre controls (MegaloHN build only).
@@ -103,6 +106,7 @@ MegaloAudioProcessor::MegaloAudioProcessor()
     pPitch2En    = raw("pitch2_enable");
     pPitchMode   = raw("pitch_mode");
     pDryLevel    = raw("dry_level");
+    pXfade       = raw("xfade_ms");
 #ifdef MEGALO_HN_SYNTH
     pHnBright    = raw("hn_brightness");
     pHnDamp      = raw("hn_damping");
@@ -158,6 +162,7 @@ void MegaloAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         pDetuneEn->load(), pPitch1En->load(), pPitch2En->load(),
         pPitchMode->load(),
         pDryLevel->load(),
+        pXfade->load(),
 #ifdef MEGALO_HN_SYNTH
         pHnBright->load(), pHnDamp->load(), pHnEvenOdd->load(),
         pHnNoise->load(), pHnWidth->load()

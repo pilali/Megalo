@@ -307,9 +307,9 @@
         lv2:portProperty lv2:connectionOptional
     ] ,
 
-    # ── Dry level (dry→wet crossfade gain) ───────────────────────────────
-    # Gain on the latency-mask dry-fill that covers the capture gap on each
-    # onset, crossfading the live dry into the frozen wet. 1.0 = neutral.
+    # ── Dry level (gain on the live dry signal) ──────────────────────────
+    # 1.0 = neutral. The dry is mixed against the frozen wet by Blend
+    # (equal-power) and momentarily boosted to full over the onset crossfade.
     [
         a lv2:InputPort, lv2:ControlPort ;
         lv2:index 28 ;
@@ -318,4 +318,18 @@
         lv2:default 1.0 ;
         lv2:minimum 0.0 ;
         lv2:maximum 2.0 ;
+    ] ,
+
+    # ── Crossfade (onset dry→wet fade time) ──────────────────────────────
+    # After each new freeze the output is held on the live dry, then fades to
+    # the steady Blend over this time. 0 = instant hand-over.
+    [
+        a lv2:InputPort, lv2:ControlPort ;
+        lv2:index 29 ;
+        lv2:symbol "xfade_ms" ;
+        lv2:name   "Crossfade" ;
+        lv2:default 100.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 2000.0 ;
+        units:unit  units:ms ;
     ] .

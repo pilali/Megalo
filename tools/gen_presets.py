@@ -46,13 +46,23 @@ HN_URI     = "https://github.com/pilali/megalo/hn"
 #   dry_level 0..2   hn_brightness -1..1   hn_damping 0..1
 #   hn_even_odd -1..1   hn_noise 0..1   hn_width 0..1
 
+# Onset dry→wet crossfade time per preset (ms). Long, lush pads fade in slowly;
+# tighter/effect presets hand over quickly. Shared control (both plugins).
+XFADE_MS = {
+    "Clean Sustain": 120, "Octave Pad": 200, "Shimmer": 300, "Choir": 250,
+    "Cathedral": 400, "Drone": 350, "Glass": 80, "Sub Bass": 60,
+    "Octaver": 30, "Frozen Strings": 500,
+}
+
+
 def preset(name, base, pitch_mode, hn):
-    # dry_level is a shared control (both Megalo and MegaloHN), so it lives with
-    # the base params even though it is declared alongside the timbre values for
-    # readability in the table below.
+    # dry_level and xfade_ms are shared controls (both Megalo and MegaloHN), so
+    # they live with the base params. dry_level is written alongside the timbre
+    # values above for readability and moved here.
     base = dict(base)
     hn = dict(hn)
     base["dry_level"] = hn.pop("dry_level")
+    base["xfade_ms"] = XFADE_MS.get(name, 100)
     return {"name": name, "base": base, "pitch_mode": pitch_mode, "hn": hn}
 
 PRESETS = [
@@ -185,7 +195,7 @@ BASE_ORDER = sorted([
     "env_release", "env_sustain", "filter_cutoff", "filter_q", "filter_type",
     "grain_size_ms", "grain_xfade_ms", "onset_threshold", "pitch1_enable",
     "pitch1_level", "pitch1_semi", "pitch2_enable", "pitch2_level",
-    "pitch2_semi", "sample_ms",
+    "pitch2_semi", "sample_ms", "xfade_ms",
 ])
 HN_ORDER = ["hn_brightness", "hn_damping", "hn_even_odd", "hn_noise", "hn_width"]
 

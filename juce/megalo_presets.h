@@ -37,6 +37,7 @@ static const PresetParam kPreset0[] = {
     { "pitch2_level", 0.0f },
     { "pitch2_semi", 12.0f },
     { "sample_ms", 160.0f },
+    { "xfade_ms", 120.0f },
     { "pitch_mode", 0.0f },
 #ifdef MEGALO_HN_SYNTH
     { "hn_brightness", 0.0f },
@@ -74,6 +75,7 @@ static const PresetParam kPreset1[] = {
     { "pitch2_level", 0.0f },
     { "pitch2_semi", 0.0f },
     { "sample_ms", 200.0f },
+    { "xfade_ms", 200.0f },
     { "pitch_mode", 0.0f },
 #ifdef MEGALO_HN_SYNTH
     { "hn_brightness", -0.2f },
@@ -111,6 +113,7 @@ static const PresetParam kPreset2[] = {
     { "pitch2_level", 0.3f },
     { "pitch2_semi", 19.0f },
     { "sample_ms", 180.0f },
+    { "xfade_ms", 300.0f },
     { "pitch_mode", 1.0f },
 #ifdef MEGALO_HN_SYNTH
     { "hn_brightness", 0.5f },
@@ -148,6 +151,7 @@ static const PresetParam kPreset3[] = {
     { "pitch2_level", 0.4f },
     { "pitch2_semi", 12.0f },
     { "sample_ms", 220.0f },
+    { "xfade_ms", 250.0f },
     { "pitch_mode", 0.0f },
 #ifdef MEGALO_HN_SYNTH
     { "hn_brightness", 0.1f },
@@ -185,6 +189,7 @@ static const PresetParam kPreset4[] = {
     { "pitch2_level", 0.25f },
     { "pitch2_semi", 7.0f },
     { "sample_ms", 300.0f },
+    { "xfade_ms", 400.0f },
     { "pitch_mode", 1.0f },
 #ifdef MEGALO_HN_SYNTH
     { "hn_brightness", 0.3f },
@@ -222,6 +227,7 @@ static const PresetParam kPreset5[] = {
     { "pitch2_level", 0.3f },
     { "pitch2_semi", -24.0f },
     { "sample_ms", 360.0f },
+    { "xfade_ms", 350.0f },
     { "pitch_mode", 0.0f },
 #ifdef MEGALO_HN_SYNTH
     { "hn_brightness", -0.5f },
@@ -259,6 +265,7 @@ static const PresetParam kPreset6[] = {
     { "pitch2_level", 0.25f },
     { "pitch2_semi", 24.0f },
     { "sample_ms", 120.0f },
+    { "xfade_ms", 80.0f },
     { "pitch_mode", 1.0f },
 #ifdef MEGALO_HN_SYNTH
     { "hn_brightness", 0.8f },
@@ -296,6 +303,7 @@ static const PresetParam kPreset7[] = {
     { "pitch2_level", 0.0f },
     { "pitch2_semi", -24.0f },
     { "sample_ms", 150.0f },
+    { "xfade_ms", 60.0f },
     { "pitch_mode", 0.0f },
 #ifdef MEGALO_HN_SYNTH
     { "hn_brightness", -0.6f },
@@ -333,6 +341,7 @@ static const PresetParam kPreset8[] = {
     { "pitch2_level", 0.3f },
     { "pitch2_semi", 12.0f },
     { "sample_ms", 100.0f },
+    { "xfade_ms", 30.0f },
     { "pitch_mode", 0.0f },
 #ifdef MEGALO_HN_SYNTH
     { "hn_brightness", 0.0f },
@@ -370,6 +379,7 @@ static const PresetParam kPreset9[] = {
     { "pitch2_level", 0.3f },
     { "pitch2_semi", 12.0f },
     { "sample_ms", 240.0f },
+    { "xfade_ms", 500.0f },
     { "pitch_mode", 0.0f },
 #ifdef MEGALO_HN_SYNTH
     { "hn_brightness", 0.2f },

@@ -83,6 +83,7 @@ private:
     std::atomic<float>* pPitch2En    = nullptr;
     std::atomic<float>* pPitchMode   = nullptr;
     std::atomic<float>* pDryLevel    = nullptr;
+    std::atomic<float>* pXfade       = nullptr;
 #ifdef MEGALO_HN_SYNTH
     std::atomic<float>* pHnBright     = nullptr;
     std::atomic<float>* pHnDamp       = nullptr;

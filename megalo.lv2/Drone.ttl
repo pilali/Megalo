@@ -85,4 +85,7 @@
 	] , [
 		lv2:symbol "sample_ms" ;
 		pset:value 360.0
+	] , [
+		lv2:symbol "xfade_ms" ;
+		pset:value 350.0
 	] .

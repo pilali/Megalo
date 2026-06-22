@@ -86,6 +86,9 @@
 		lv2:symbol "sample_ms" ;
 		pset:value 150.0
 	] , [
+		lv2:symbol "xfade_ms" ;
+		pset:value 60.0
+	] , [
 		lv2:symbol "hn_brightness" ;
 		pset:value -0.6
 	] , [
