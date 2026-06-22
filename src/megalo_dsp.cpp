@@ -119,8 +119,9 @@ struct MegaloDsp {
     // chord at base/pitch1/pitch2. When no pitched content is found the granular
     // path below is used as a fallback.
     MultiHNState      hn_state;
-    PolyAdditiveSynth hn_v0;   // base chord
-    PolyAdditiveSynth hn_v1;   // pitch voice 1 (+ detune LFO)
+    PolyAdditiveSynth hn_v0;   // base chord (clean)
+    PolyAdditiveSynth hn_vd;   // detuned copy of the base chord (chorus voice)
+    PolyAdditiveSynth hn_v1;   // pitch voice 1
     PolyAdditiveSynth hn_v2;   // pitch voice 2
     bool hn_needs_analysis = false;
     // MegaloHN anti-click: the additive voices only exist after the deferred
@@ -334,6 +335,7 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
         if (ll > 0) {
             p->hn_state = hn_multif0_analyze(la, ll, sr);
             p->hn_v0.reset(p->hn_state, sr);
+            p->hn_vd.reset(p->hn_state, sr);
             p->hn_v1.reset(p->hn_state, sr);
             p->hn_v2.reset(p->hn_state, sr);
             p->hn_t_bright = 1e9f;   // fresh voices → force a timbre re-apply
@@ -356,6 +358,7 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
         (hn_bright != p->hn_t_bright || hn_damp != p->hn_t_damp ||
          hn_eo != p->hn_t_eo || hn_noise != p->hn_t_noise)) {
         p->hn_v0.set_timbre(hn_bright, hn_damp, hn_eo, hn_noise);
+        p->hn_vd.set_timbre(hn_bright, hn_damp, hn_eo, hn_noise);
         p->hn_v1.set_timbre(hn_bright, hn_damp, hn_eo, hn_noise);
         p->hn_v2.set_timbre(hn_bright, hn_damp, hn_eo, hn_noise);
         p->hn_t_bright = hn_bright; p->hn_t_damp = hn_damp;
@@ -363,14 +366,18 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
     }
     // Update the chord transpositions every block (real-time knob changes).
     if (p->hn_state.valid) {
-        const double lfo_blk  = std::sin(2.0 * M_PI * p->lfo_phase);
-        const float  det_semi = detune_en
-                              ? static_cast<float>(detune_ct * lfo_blk / 100.0) : 0.0f;
-        // Detune LFO is applied to the always-on base voice (so the effect is
-        // audible without enabling pitch voice 1) and anti-phase on voice 1 for
-        // chorus width. det_semi is already 0 when detune is disabled.
-        p->hn_v0.set_pitch_ratio(base_speed * static_cast<float>(semi_to_ratio(det_semi)));
-        p->hn_v1.set_pitch_ratio(static_cast<float>(semi_to_ratio(p1_semi - det_semi)));
+        const double lfo_blk = std::sin(2.0 * M_PI * p->lfo_phase);
+        // Base voice stays clean; the detuned copy oscillates within ±detune_ct
+        // cents around the base (chorus LFO at chorus_rate). detune_blend then
+        // mixes that copy into the base in the render loop — mirroring the
+        // granular base/gp_d path, so the detune is heard as a blendable
+        // detuned layer of the MegaloHN signal rather than a pitch wobble.
+        p->hn_v0.set_pitch_ratio(base_speed);
+        const float det_speed_blk = detune_en
+            ? base_speed * static_cast<float>(1.0 + (det_ratio - 1.0) * lfo_blk)
+            : base_speed;
+        p->hn_vd.set_pitch_ratio(det_speed_blk);
+        p->hn_v1.set_pitch_ratio(static_cast<float>(semi_to_ratio(p1_semi)));
         p->hn_v2.set_pitch_ratio(static_cast<float>(semi_to_ratio(p2_semi)));
     }
 #endif
@@ -445,20 +452,30 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             // Polyphonic additive resynthesis of the frozen chord. The granular
             // players are skipped entirely on this path.
             if (stereo && hn_width > 0.0f) {
-                float l0, r0, l1, r1, l2, r2;
+                float l0, r0, ld, rd, l1, r1, l2, r2;
                 p->hn_v0.process_stereo(l0, r0, hn_width);
+                p->hn_vd.process_stereo(ld, rd, hn_width);
                 p->hn_v1.process_stereo(l1, r1, hn_width);
                 p->hn_v2.process_stereo(l2, r2, hn_width);
-                freeze_sig = l0 + (pitch1_en ? l1 * p1_lvl : 0.0f)
-                                + (pitch2_en ? l2 * p2_lvl : 0.0f);
-                hn_wet_r   = r0 + (pitch1_en ? r1 * p1_lvl : 0.0f)
-                                + (pitch2_en ? r2 * p2_lvl : 0.0f);
+                // Base + blended detuned copy (detune_blend = amount injected).
+                const float base_l = detune_en
+                    ? l0 * (1.0f - detune_blend) + ld * detune_blend : l0;
+                const float base_r = detune_en
+                    ? r0 * (1.0f - detune_blend) + rd * detune_blend : r0;
+                freeze_sig = base_l + (pitch1_en ? l1 * p1_lvl : 0.0f)
+                                    + (pitch2_en ? l2 * p2_lvl : 0.0f);
+                hn_wet_r   = base_r + (pitch1_en ? r1 * p1_lvl : 0.0f)
+                                    + (pitch2_en ? r2 * p2_lvl : 0.0f);
             } else {
                 const float h0 = p->hn_v0.process();
+                const float hd = p->hn_vd.process();
                 const float h1 = p->hn_v1.process();
                 const float h2 = p->hn_v2.process();
-                freeze_sig = h0 + (pitch1_en ? h1 * p1_lvl : 0.0f)
-                                + (pitch2_en ? h2 * p2_lvl : 0.0f);
+                // Base + blended detuned copy (detune_blend = amount injected).
+                const float base = detune_en
+                    ? h0 * (1.0f - detune_blend) + hd * detune_blend : h0;
+                freeze_sig = base + (pitch1_en ? h1 * p1_lvl : 0.0f)
+                                  + (pitch2_en ? h2 * p2_lvl : 0.0f);
                 hn_wet_r = freeze_sig;   // centred
             }
         } else
