@@ -119,7 +119,7 @@ clean:
 	rm -f $(STD_BINARY) $(HN_BINARY)
 
 # Recursive copy installs everything inside each bundle: the .so binary,
-# the manifest + plugin TTLs, the preset TTLs (Choir / Fast / Grainy …),
+# the manifest + plugin TTLs, the preset TTLs (Clean Sustain / Shimmer …),
 # and the entire modgui/ directory (icon HTML, stylesheet, script, and
 # screenshot/thumbnail PNGs when present).
 install: install-megalo install-megaloHN

@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "megalo_presets.h"
 
 using APVTS = juce::AudioProcessorValueTreeState;
 using Range = juce::NormalisableRange<float>;
@@ -193,6 +194,33 @@ void MegaloAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
 juce::AudioProcessorEditor* MegaloAudioProcessor::createEditor()
 {
     return new MegaloEditor(*this);
+}
+
+// ── Factory presets ────────────────────────────────────────────────────────
+// Unified with the LV2 .ttl presets (juce/megalo_presets.h). Each preset is a
+// list of {symbol, value} pairs; values are applied through the matching APVTS
+// parameter so host automation and the editor stay in sync. The HN-only timbre
+// parameters are present in the table only for the MegaloHN build.
+int MegaloAudioProcessor::getNumPrograms() { return megalo::kNumPresets; }
+
+const juce::String MegaloAudioProcessor::getProgramName(int index)
+{
+    if (index < 0 || index >= megalo::kNumPresets) return {};
+    return megalo::kPresets[index].name;
+}
+
+void MegaloAudioProcessor::setCurrentProgram(int index)
+{
+    if (index < 0 || index >= megalo::kNumPresets) return;
+    currentProgram = index;
+
+    const auto& preset = megalo::kPresets[index];
+    for (int i = 0; i < preset.numParams; ++i)
+    {
+        const auto& pp = preset.params[i];
+        if (auto* param = apvts.getParameter(pp.symbol))
+            param->setValueNotifyingHost(param->convertTo0to1(pp.value));
+    }
 }
 
 void MegaloAudioProcessor::getStateInformation(juce::MemoryBlock& dest)

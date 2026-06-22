@@ -6,31 +6,55 @@
     a lv2:Plugin ;
     lv2:binary <megalo.so> ;
     rdfs:seeAlso <megalo.ttl> .
-    
+
+<Clean_Sustain.ttl>
+    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    a pset:Preset ;
+    rdfs:seeAlso <Clean_Sustain.ttl> .
+
+<Octave_Pad.ttl>
+    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    a pset:Preset ;
+    rdfs:seeAlso <Octave_Pad.ttl> .
+
+<Shimmer.ttl>
+    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    a pset:Preset ;
+    rdfs:seeAlso <Shimmer.ttl> .
+
 <Choir.ttl>
     lv2:appliesTo <https://github.com/pilali/megalo> ;
     a pset:Preset ;
     rdfs:seeAlso <Choir.ttl> .
 
-<Fast.ttl>
+<Cathedral.ttl>
     lv2:appliesTo <https://github.com/pilali/megalo> ;
     a pset:Preset ;
-    rdfs:seeAlso <Fast.ttl> .
+    rdfs:seeAlso <Cathedral.ttl> .
 
-<Good.ttl>
+<Drone.ttl>
     lv2:appliesTo <https://github.com/pilali/megalo> ;
     a pset:Preset ;
-    rdfs:seeAlso <Good.ttl> .
+    rdfs:seeAlso <Drone.ttl> .
 
-<Good_2.ttl>
+<Glass.ttl>
     lv2:appliesTo <https://github.com/pilali/megalo> ;
     a pset:Preset ;
-    rdfs:seeAlso <Good_2.ttl> .
+    rdfs:seeAlso <Glass.ttl> .
 
-<Grainy.ttl>
+<Sub_Bass.ttl>
     lv2:appliesTo <https://github.com/pilali/megalo> ;
     a pset:Preset ;
-    rdfs:seeAlso <Grainy.ttl> .
+    rdfs:seeAlso <Sub_Bass.ttl> .
 
+<Octaver.ttl>
+    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    a pset:Preset ;
+    rdfs:seeAlso <Octaver.ttl> .
+
+<Frozen_Strings.ttl>
+    lv2:appliesTo <https://github.com/pilali/megalo> ;
+    a pset:Preset ;
+    rdfs:seeAlso <Frozen_Strings.ttl> .
 
 <https://github.com/pilali/megalo> rdfs:seeAlso <modgui.ttl> .

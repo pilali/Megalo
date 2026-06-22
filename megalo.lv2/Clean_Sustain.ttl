@@ -6,67 +6,67 @@
 @prefix state: <http://lv2plug.in/ns/ext/state#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-<Fast.ttl>
+<Clean_Sustain.ttl>
 	a pset:Preset ;
-	lv2:appliesTo <https://github.com/pilali/megalo/hn> ;
-	rdfs:label "Fast" ;
+	lv2:appliesTo <https://github.com/pilali/megalo> ;
+	rdfs:label "Clean Sustain" ;
 	lv2:port [
 		lv2:symbol "attack_skip_ms" ;
-		pset:value 10.0
+		pset:value 40.0
 	] , [
 		lv2:symbol "base_pitch" ;
 		pset:value 0.0
 	] , [
 		lv2:symbol "blend" ;
-		pset:value 0.99553603
+		pset:value 0.85
 	] , [
 		lv2:symbol "chorus_rate" ;
-		pset:value 1.823717
+		pset:value 0.4
 	] , [
 		lv2:symbol "detune_blend" ;
-		pset:value 0.0
+		pset:value 0.15
 	] , [
 		lv2:symbol "detune_cents" ;
-		pset:value 28.0970974
+		pset:value 8.0
 	] , [
 		lv2:symbol "detune_enable" ;
 		pset:value 0.0
 	] , [
 		lv2:symbol "env_attack" ;
-		pset:value 0.0
+		pset:value 60.0
 	] , [
 		lv2:symbol "env_decay" ;
 		pset:value 200.0
 	] , [
 		lv2:symbol "env_release" ;
-		pset:value 2327.0090332
+		pset:value 1200.0
 	] , [
 		lv2:symbol "env_sustain" ;
 		pset:value 1.0
 	] , [
 		lv2:symbol "filter_cutoff" ;
-		pset:value 20.0
+		pset:value 6000.0
 	] , [
 		lv2:symbol "filter_q" ;
-		pset:value 0.1
+		pset:value 0.6
 	] , [
 		lv2:symbol "filter_type" ;
-		pset:value 1.0
+		pset:value 0.0
 	] , [
 		lv2:symbol "grain_size_ms" ;
-		pset:value 100.1060257
+		pset:value 120.0
 	] , [
 		lv2:symbol "grain_xfade_ms" ;
-		pset:value 32.83203125
+		pset:value 50.0
 	] , [
 		lv2:symbol "onset_threshold" ;
-		pset:value 0.06529
+		pset:value 0.12
 	] , [
 		lv2:symbol "pitch1_enable" ;
 		pset:value 0.0
 	] , [
 		lv2:symbol "pitch1_level" ;
-		pset:value 0.006138
+		pset:value 0.0
 	] , [
 		lv2:symbol "pitch1_semi" ;
 		pset:value -12.0
@@ -81,6 +81,5 @@
 		pset:value 12.0
 	] , [
 		lv2:symbol "sample_ms" ;
-		pset:value 130.0
+		pset:value 160.0
 	] .
-
