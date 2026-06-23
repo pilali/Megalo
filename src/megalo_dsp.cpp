@@ -55,10 +55,12 @@ static constexpr int CAPTURE_FADE_MS = 10;
 //      (LoopReady for granular Megalo; after the deferred analysis for
 //      MegaloHN). Per sample:
 //        dry_g = (dry_g0 + (1 − dry_g0)·xfade) · dry_level
-//        wet_g =  wet_g0
+//        wet_g =  wet_g0 · (1 − xfade)
 //        out   = soft_clip(x·dry_g + freeze_sig·wet_g)
-//      The pad's own attack (env_g, already baked into freeze_sig) fades the
-//      wet in; xfade fades the extra dry back out — together a clean crossfade.
+//      xfade gates BOTH channels: dry is boosted toward full AND wet is pulled
+//      to zero while xfade = 1.  This means envelope.reset() at LoopReady is
+//      inaudible (wet was already 0), and the trigger-time crossfade is a clean
+//      simultaneous dry-fade-out / wet-fade-in over env_attack milliseconds.
 
 // Stereo width: left/right filter cutoffs are spread by ±this fraction, and
 // the right detune LFO runs anti-phase to the left. Subtle enough to stay
@@ -531,11 +533,11 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             p->xfade = std::max(0.0f, p->xfade - xfade_dec);
         const float xf    = p->xfade;
         const float dry_g = (dry_g0 + (1.0f - dry_g0) * xf) * dry_level;
-        const float wet_g = wet_g0;
+        const float wet_g = wet_g0 * (1.0f - xf);
 
-        // Dry→wet crossfade: dry = live input (boosted to full over the onset
-        // hand-over), wet = the frozen pad on its own ADSR. Equal-power at steady
-        // state (xf = 0); pure live dry right after onset (xf = 1).
+        // Dry→wet crossfade: xfade gates both sides simultaneously — dry is
+        // boosted toward full while wet is pulled to zero (xf=1), then they
+        // swap back to the steady blend (xf=0) over env_attack milliseconds.
         outL[i] = soft_clip(x * dry_g + freeze_sig * wet_g);
 
         if (stereo) {
