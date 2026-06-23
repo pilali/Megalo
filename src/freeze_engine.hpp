@@ -11,6 +11,16 @@ static constexpr int FREEZE_MAX_SAMPLES = FREEZE_MAX_SR * FREEZE_MAX_CAP_MS / 10
 // Covers ~10 fundamental periods of the lowest guitar string (~82 Hz).
 static constexpr int SEARCH_EXTRA_MS = 120;
 
+// After LoopReady the original onset refractory (retrigger_ms ≈ 200 ms) has
+// already expired (capture takes longer than that).  Without a fresh hold the
+// detector can immediately re-arm and fire a second onset — which later causes
+// envelope.reset() to interrupt an active pad, producing a click.
+// This short post-loop hold blocks re-detection long enough for the analysis
+// block to complete and the new attack to start from zero cleanly.
+// Tune this value if re-triggers are needed faster (lower) or the click persists
+// on very short attacks (raise slightly).
+static constexpr int FREEZE_POST_LOOP_HOLD_MS = 20;
+
 enum class FreezeEvent { None = 0, Onset = 1, LoopReady = 2 };
 
 // Forward-capture freeze engine with automatic loop-point search.
@@ -173,6 +183,12 @@ private:
         }
 
         _state = State::Looping;
+
+        // Anti-rebond post-LoopReady: prevent an immediate re-onset before the
+        // analysis block has run and the new attack has started from zero.
+        const int post_hold = static_cast<int>(_sr * FREEZE_POST_LOOP_HOLD_MS * 0.001f);
+        if (_onset_hold < post_hold)
+            _onset_hold = post_hold;
     }
 
     float  _loop[FREEZE_MAX_SAMPLES] = {};  // recording + search scratch
