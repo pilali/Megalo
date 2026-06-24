@@ -86,17 +86,20 @@ endif
 # In cross-compilation CXXFLAGS already contains -I$(STAGING_DIR)/usr/include
 LV2FLAGS ?= $(shell pkg-config --cflags lv2 2>/dev/null)
 
-# Two distinct plugins built from one shared, host-agnostic core
-# (src/megalo_dsp.cpp). The polyphonic H+N engine lives in the core gated by
-# MEGALO_HN_SYNTH; flipping that flag (via HN_DEFS) yields MegaloHN, leaving it
-# off yields the stock granular Megalo. Both ship as separate LV2 bundles so
-# they install side by side.
+# Two fully separate plugins, each built from its own DSP core. The stock
+# granular Megalo uses src/megalo_dsp.cpp; the polyphonic H+N MegaloHN uses
+# src/megaloHN_dsp.cpp (still gated by MEGALO_HN_SYNTH via HN_DEFS for its
+# wrapper/port mapping). The two cores share only the C API + MegaloParams
+# contract in src/megalo_dsp.h, so MegaloHN's tuning can't affect Megalo's
+# sound. Both ship as separate LV2 bundles so they install side by side.
 STD_BUNDLE  = megalo.lv2
 STD_BINARY  = $(STD_BUNDLE)/megalo.so
 HN_BUNDLE   = megaloHN.lv2
 HN_BINARY   = $(HN_BUNDLE)/megaloHN.so
 
-SOURCES = src/plugin.cpp src/megalo_dsp.cpp src/glibc_compat.cpp
+COMMON_SOURCES = src/plugin.cpp src/glibc_compat.cpp
+STD_SOURCES = $(COMMON_SOURCES) src/megalo_dsp.cpp
+HN_SOURCES  = $(COMMON_SOURCES) src/megaloHN_dsp.cpp
 HEADERS = src/megalo_dsp.h src/freeze_engine.hpp src/granular_looper.hpp \
           src/biquad.hpp src/envelope.hpp src/phase_vocoder.hpp \
           src/hn_state.hpp src/hn_quality.hpp src/hn_fft.hpp src/hn_multif0.hpp \
@@ -109,11 +112,11 @@ all: $(STD_BINARY) $(HN_BINARY)
 megalo:   $(STD_BINARY)
 megaloHN: $(HN_BINARY)
 
-$(STD_BINARY): $(SOURCES) $(HEADERS)
-	$(CXX) $(CXXFLAGS) $(EXTRA_DEFS) $(LV2FLAGS) -fPIC -shared -o $@ $(SOURCES) $(LDFLAGS)
+$(STD_BINARY): $(STD_SOURCES) $(HEADERS)
+	$(CXX) $(CXXFLAGS) $(EXTRA_DEFS) $(LV2FLAGS) -fPIC -shared -o $@ $(STD_SOURCES) $(LDFLAGS)
 
-$(HN_BINARY): $(SOURCES) $(HEADERS)
-	$(CXX) $(CXXFLAGS) $(EXTRA_DEFS) $(HN_DEFS) $(LV2FLAGS) -fPIC -shared -o $@ $(SOURCES) $(LDFLAGS)
+$(HN_BINARY): $(HN_SOURCES) $(HEADERS)
+	$(CXX) $(CXXFLAGS) $(EXTRA_DEFS) $(HN_DEFS) $(LV2FLAGS) -fPIC -shared -o $@ $(HN_SOURCES) $(LDFLAGS)
 
 clean:
 	rm -f $(STD_BINARY) $(HN_BINARY)
