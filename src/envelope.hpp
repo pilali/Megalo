@@ -21,9 +21,19 @@ public:
         _rel_c = coeff(rel_ms);
     }
 
-    void trigger() noexcept { _state = State::Attack; }
+    void trigger() noexcept { _state = State::Attack; _rel_cap_c = 1.0f; }
     void release() noexcept { if (_state != State::Idle) _state = State::Release; }
     void reset()   noexcept { _state = State::Idle; _level = 0.0f; }
+
+    // Release, but guarantee ~90% of the decay happens within cap_ms even if
+    // the user's release time is longer. Used when the pad is known to be
+    // REPLACED shortly (the freeze buffer swap at LoopReady is instantaneous,
+    // so any level still present at that moment becomes an audible click).
+    void release_capped(float cap_ms, float sr) noexcept {
+        release();
+        const float samples = cap_ms * 0.001f * sr;
+        _rel_cap_c = (samples > 1.0f) ? std::exp(-std::log(9.0f) / samples) : 0.0f;
+    }
 
     float process() noexcept {
         switch (_state) {
@@ -42,7 +52,8 @@ public:
             break;
 
         case State::Release:
-            _level *= _rel_c;
+            // The cap (see release_capped) can only make the decay faster.
+            _level *= std::min(_rel_c, _rel_cap_c);
             if (_level < 0.0001f) { _level = 0.0f; _state = State::Idle; }
             break;
 
@@ -62,4 +73,5 @@ private:
     float _atk_c   = 0.0f;
     float _dcy_c   = 0.0f;
     float _rel_c   = 0.0f;
+    float _rel_cap_c = 1.0f;   // release_capped() override; 1 = no cap
 };

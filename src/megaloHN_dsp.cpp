@@ -43,6 +43,11 @@
 static constexpr int XFADE_MS        = 20;
 static constexpr int RETRIGGER_MS    = 200;
 static constexpr int CAPTURE_FADE_MS = 10;
+// Onset crossfade ramp-UP time: the dry is boosted to full (and the wet
+// pulled to zero) over this window instead of in a single sample — the old
+// instantaneous xfade=1 assignment was a simultaneous step on BOTH gains,
+// audible as a click at every onset (dominated by the dry-gain jump).
+static constexpr int XFADE_UP_MS     = 15;
 
 // Dry→wet handling. Two parts, shared by Megalo and MegaloHN:
 //
@@ -119,6 +124,8 @@ struct MegaloDsp {
     float xfade     = 0.0f;    // 1 right after onset (full dry), → 0 at steady blend
     bool  xfade_run = false;   // false while covering the capture gap; true once
                                // the new pad is ready and the dry may recede
+    bool  xfade_gap = false;   // capture gap in progress: ramp xfade UP toward 1
+                               // (anti-click) until the new pad takes over
 
 #ifdef MEGALO_HN_SYNTH
     // Polyphonic harmonic+noise engine. Analysis runs once per capture (at the
@@ -218,6 +225,7 @@ void megalo_dsp_reset(MegaloDsp* p)
     p->trigger_value = 0.0f;
     p->xfade     = 0.0f;
     p->xfade_run = false;
+    p->xfade_gap = false;
 #ifdef MEGALO_HN_SYNTH
     p->hn_state          = MultiHNState{};
     p->hn_needs_analysis = false;
@@ -316,6 +324,9 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
     // attack in — the most natural pairing. (0 ms attack ⇒ instant hand-over.)
     const float xfade_dec = 1.0f /
         std::max(1.0f, env_atk * 0.001f * sr);
+    // Ramp-up rate for the onset (anti-click, see XFADE_UP_MS).
+    const float xfade_up_inc = 1.0f /
+        std::max(1.0f, XFADE_UP_MS * 0.001f * sr);
 
     const double lfo_inc  = static_cast<double>(chorus_rate) / p->sample_rate;
     // det_speed range per sample: base_speed * 2^(±detune_ct/1200).
@@ -372,6 +383,7 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
     // and lets the dry-fill crossfade cleanly into the wet.
     if (p->hn_trigger_pending) {
         p->envelope.trigger();
+        p->xfade_gap = false;
         p->xfade_run = true;   // new chord ready → fade the dry back to the blend
         p->hn_trigger_pending = false;
     }
@@ -414,9 +426,10 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
 
         if (evt == FreezeEvent::Onset) {
             p->envelope.release();
-            // Hold the output on the live dry signal; do not start the fade back
-            // to the blend until the new pad is ready (LoopReady / HN analysis).
-            p->xfade     = 1.0f;
+            // Move the output onto the live dry signal (anti-click RAMP, not a
+            // jump) and hold it there; the fade back to the blend only starts
+            // once the new pad is ready (LoopReady / HN analysis).
+            p->xfade_gap = true;
             p->xfade_run = false;
             onset_this_block = true;
         } else if (evt == FreezeEvent::LoopReady) {
@@ -435,10 +448,13 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             p->pv2.reset();
 #endif
             // Start the attack from zero so the pad fades in cleanly — no step
-            // when the prior release had not fully decayed.
+            // when the prior release had not fully decayed (the wet gain has
+            // been at zero since the onset ramp completed, so this is silent).
             p->envelope.reset();
-            // Keep the output fully on the live dry over the hand-over.
-            p->xfade = 1.0f;
+            // Keep the output fully on the live dry over the hand-over. The
+            // ramp has long finished by now (capture ≥ ~170 ms ≫ XFADE_UP_MS),
+            // so xfade is already 1 — the gap flag just keeps it pinned there.
+            p->xfade_gap = true;
 #ifdef MEGALO_HN_SYNTH
             // MegaloHN: the additive voices aren't analyzed/reset until the next
             // block boundary. Hold the envelope at zero (stale chord stays
@@ -449,6 +465,7 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             p->hn_trigger_pending = true;
 #else
             p->envelope.trigger();
+            p->xfade_gap = false;
             p->xfade_run = true;            // new pad ready → fade dry back to blend
 #endif
         }
@@ -460,6 +477,7 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
 
         const float*   ldata = p->freeze.loop_data();
         const int      llen  = p->freeze.loop_len();
+        const float    lper  = p->freeze.period();   // 0 = unpitched content
 
         float freeze_sig;
         // v1/v2 live at loop scope: the right channel's phase-vocoder path
@@ -511,8 +529,8 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             const float det_speed = base_speed *
                 static_cast<float>(1.0 + (det_ratio - 1.0) * lfo);
 
-            const float v0 = p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
-            const float vd = p->gp_d.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed);
+            const float v0 = p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed, lper);
+            const float vd = p->gp_d.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed, lper);
 #ifdef MEGALO_PHASE_VOCODER
             if (use_pv) {
                 v1 = (llen > 0) ? p->pv1.process(ldata, llen) : 0.0f;
@@ -520,8 +538,8 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             } else
 #endif
             {
-                v1 = p->gp1.process(ldata, llen, grain_samples, grain_xfade_smp, v1_speed);
-                v2 = p->gp2.process(ldata, llen, grain_samples, grain_xfade_smp, v2_speed);
+                v1 = p->gp1.process(ldata, llen, grain_samples, grain_xfade_smp, v1_speed, lper);
+                v2 = p->gp2.process(ldata, llen, grain_samples, grain_xfade_smp, v2_speed, lper);
             }
 
             // Mix: detune_blend fades between dry base and detuned base
@@ -539,11 +557,14 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
         const float env_g = p->envelope.process();
         freeze_sig *= env_g;
 
-        // Advance the onset crossfade once per sample (shared L/R). xfade is held
-        // at 1 from onset until the new pad is ready, then decays to 0 over the
-        // envelope ATTACK time, fading the boosted dry back to the steady blend.
+        // Advance the onset crossfade once per sample (shared L/R). xfade ramps
+        // up over XFADE_UP_MS after the onset (anti-click), holds at 1 until the
+        // new pad is ready, then decays to 0 over the envelope ATTACK time,
+        // fading the boosted dry back to the steady blend.
         if (p->xfade_run)
             p->xfade = std::max(0.0f, p->xfade - xfade_dec);
+        else if (p->xfade_gap)
+            p->xfade = std::min(1.0f, p->xfade + xfade_up_inc);
         const float xf    = p->xfade;
         const float dry_g = (dry_g0 + (1.0f - dry_g0) * xf) * dry_level;
         const float wet_g = wet_g0 * (1.0f - xf);
@@ -568,8 +589,8 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
                 const float det_speed_r = base_speed *
                     static_cast<float>(1.0 + (det_ratio - 1.0) * (-lfo));
 
-                const float v0r = p->gp0_r.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
-                const float vdr = p->gp_d_r.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed_r);
+                const float v0r = p->gp0_r.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed, lper);
+                const float vdr = p->gp_d_r.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed_r, lper);
                 float v1r, v2r;
 #ifdef MEGALO_PHASE_VOCODER
                 if (use_pv) {
@@ -580,8 +601,8 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
                 } else
 #endif
                 {
-                    v1r = p->gp1_r.process(ldata, llen, grain_samples, grain_xfade_smp, v1_speed);
-                    v2r = p->gp2_r.process(ldata, llen, grain_samples, grain_xfade_smp, v2_speed);
+                    v1r = p->gp1_r.process(ldata, llen, grain_samples, grain_xfade_smp, v1_speed, lper);
+                    v2r = p->gp2_r.process(ldata, llen, grain_samples, grain_xfade_smp, v2_speed, lper);
                 }
 
                 const float base_r = detune_en

@@ -476,7 +476,36 @@ FetchContent JUCE bloqué) ; elle est couverte par la CI GitHub Actions
 
 Pistes restantes (inchangées) : #4 worker thread pour l'analyse HN, #9
 SVF/lissage filtre + BP gain constant, #11 phase locking PV / phases mesurées
-HN / bruit HN stéréo-enveloppé, #12 cible `make audit` en CI — plus la
-nouvelle observation : annulations de phase entre grains sur matériau très
-tonal (respawn aligné en phase à étudier, mesuré jusqu'à ~25 dB de creux sur
-sinus pur, bien moindre sur matériau réel).
+HN / bruit HN stéréo-enveloppé, #12 cible `make audit` en CI.
+
+### Deuxième passe (retours utilisateur : clacs dry→wet, grains pas lisses)
+
+- **Clacs éliminés (mesuré)** — deux discontinuités distinctes :
+  MegaloHN sautait `xfade` 0→1 en un échantillon à chaque onset (marche
+  simultanée sur dry_g ET wet_g ; mesuré ×70 la pente d'entrée) → rampe de
+  15 ms (`XFADE_UP_MS`). Megalo forçait `comp_level = 1` à LoopReady et
+  coupait le release en cours (`envelope.reset()`) → release plafonné
+  (`release_capped`, 0,6 × durée de capture : quasi éteint avant le swap de
+  boucle) et suppression du saut forcé. Après correction, aucun pas de
+  sortie au-dessus de la pente d'entrée sur le cœur granulaire.
+- **Vraie cause du pompage : le raccord de boucle lui-même.** Le crossfade
+  gravé en queue mélangeait la queue avec la TÊTE de la boucle — décalés de
+  `len mod T` pour un contenu périodique — gravant une encoche d'annulation
+  de ~20 ms (mesurée à 40 % d'amplitude) traversée par chaque grain, et
+  faussant l'analyse HN (f0 à −4 %, resynthèse 3× trop forte). Correctifs :
+  (1) crossfade contre le contenu ADJACENT de l'enregistrement (pré-tête ou
+  post-queue), (2) **rognage de la boucle à un nombre entier de périodes**
+  (estimation par autocorrélation normalisée + hill-climb + raffinement
+  parabolique, `FreezeEngine::period()`), (3) suppression du fondu de tête
+  gravé (inutile en lecture granulaire aléatoire), (4) respawn de grains
+  **aligné en phase** par corrélation directe avec la voix de référence
+  (`GrainPlayer::_aligned_pos`). Résultat mesuré : pompage sur sinus gelé
+  24–30 dB → **1,3–4,3 dB**, f0 HN exact, resynthèse recalibrée (0,205 vs
+  boucle 0,216).
+- **modgui** : rangée de blocs recalée sur les marges de la fenêtre (knobs
+  42→40 px, gap HN 10→8 px — le bloc GLOBAL débordait de 22–30 px et était
+  rogné par le bord du panneau) ; marge morte de 10 px sous les poignées
+  hautes (plus de saisie accidentelle de SAMPLE/SKIP en réglant l'ADSR,
+  parité JUCE) ; potentiomètres restructurés avec un rotor transparent
+  (`.megalo-knob-rotor` porte le mod-role) pour que seul le curseur orange
+  tourne, l'ombrage du cadran restant fixe.

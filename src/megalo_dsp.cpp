@@ -304,7 +304,14 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
                                                    XFADE_MS, RETRIGGER_MS, CAPTURE_FADE_MS);
 
         if (evt == FreezeEvent::Onset) {
-            p->envelope.release();
+            // Release the previous pad, capped so it is (near-)silent by the
+            // time the freshly captured loop replaces the play buffer: the
+            // buffer swap at LoopReady is instantaneous, so any wet level
+            // left at that point — and the matching jump of the dry-fill —
+            // used to be an audible click on long release settings.
+            const float capture_ms = static_cast<float>(
+                attack_skip + sample_ms + SEARCH_EXTRA_MS);
+            p->envelope.release_capped(0.6f * capture_ms, sr);
             // Cover the capture latency with the live dry signal.
             p->comp_target = 1.0f;
             onset_this_block = true;
@@ -324,15 +331,14 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             p->pv2.reset();
 #endif
             // Start the attack from zero so env_g (which drives the dry-fill
-            // recede below) ramps 0→1 cleanly — no step when the prior release
-            // had not fully decayed.
+            // recede below) ramps 0→1 cleanly. The capped release (see Onset)
+            // guarantees the previous pad has already decayed to ~-30 dB by
+            // now, so this reset is inaudible — and the dry-fill has already
+            // risen to ~1 through the 1−env_g tracking, so no forced jump of
+            // comp_level is needed (the old `comp_level = 1.0f` assignment
+            // was a step in the DRY gain: an audible click every capture).
             p->envelope.reset();
             p->envelope.trigger();
-            // New pad is ready → hand the dry-fill back to the pad's envelope.
-            // Force full dry coverage now: the new loop attacks from zero, so the
-            // dry must cover the hand-over (the gap left comp_level low while the
-            // previous loop was still releasing); recovery recedes it as env_g rises.
-            p->comp_level  = 1.0f;
             p->comp_target = 0.0f;
         }
 
@@ -343,6 +349,7 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
 
         const float*   ldata = p->freeze.loop_data();
         const int      llen  = p->freeze.loop_len();
+        const float    lper  = p->freeze.period();   // 0 = unpitched content
 
         // v1/v2 live at loop scope: the right channel's phase-vocoder path
         // shares them. Granular voices for pitch 1/2.
@@ -353,8 +360,8 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
         const float det_speed = base_speed *
             static_cast<float>(1.0 + (det_ratio - 1.0) * lfo);
 
-        const float v0 = p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
-        const float vd = p->gp_d.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed);
+        const float v0 = p->gp0.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed, lper);
+        const float vd = p->gp_d.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed, lper);
 #ifdef MEGALO_PHASE_VOCODER
         if (use_pv) {
             v1 = (llen > 0) ? p->pv1.process(ldata, llen) : 0.0f;
@@ -362,8 +369,8 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
         } else
 #endif
         {
-            v1 = p->gp1.process(ldata, llen, grain_samples, grain_xfade_smp, v1_speed);
-            v2 = p->gp2.process(ldata, llen, grain_samples, grain_xfade_smp, v2_speed);
+            v1 = p->gp1.process(ldata, llen, grain_samples, grain_xfade_smp, v1_speed, lper);
+            v2 = p->gp2.process(ldata, llen, grain_samples, grain_xfade_smp, v2_speed, lper);
         }
 
         // Mix: detune_blend fades between dry base and detuned base
@@ -408,8 +415,8 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             const float det_speed_r = base_speed *
                 static_cast<float>(1.0 + (det_ratio - 1.0) * (-lfo));
 
-            const float v0r = p->gp0_r.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed);
-            const float vdr = p->gp_d_r.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed_r);
+            const float v0r = p->gp0_r.process(ldata, llen, grain_samples, grain_xfade_smp, base_speed, lper);
+            const float vdr = p->gp_d_r.process(ldata, llen, grain_samples, grain_xfade_smp, det_speed_r, lper);
             float v1r, v2r;
 #ifdef MEGALO_PHASE_VOCODER
             if (use_pv) {
@@ -420,8 +427,8 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             } else
 #endif
             {
-                v1r = p->gp1_r.process(ldata, llen, grain_samples, grain_xfade_smp, v1_speed);
-                v2r = p->gp2_r.process(ldata, llen, grain_samples, grain_xfade_smp, v2_speed);
+                v1r = p->gp1_r.process(ldata, llen, grain_samples, grain_xfade_smp, v1_speed, lper);
+                v2r = p->gp2_r.process(ldata, llen, grain_samples, grain_xfade_smp, v2_speed, lper);
             }
 
             const float base_r = detune_en

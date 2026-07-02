@@ -508,9 +508,12 @@ void WindowPanel::resized()
     const int halfH = b.getHeight() / 2;
 
     // Top handles spread across the full width (count varies with the engine).
+    // 10px shorter than the half-window: a dead margin above the envelope
+    // area so grabbing an ADSR breakpoint near the midline can't
+    // accidentally drag SAMPLE/SKIP/SIZE/XFADE.
     const int topColW = b.getWidth() / juce::jmax(1, topHandles.size());
     for (int i = 0; i < topHandles.size(); ++i)
-        topHandles[i]->setBounds(i * topColW, 0, topColW, halfH);
+        topHandles[i]->setBounds(i * topColW, 0, topColW, halfH - 10);
 
     envEditor.setBounds(0, halfH, b.getWidth(), b.getHeight() - halfH);
 
