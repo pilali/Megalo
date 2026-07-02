@@ -161,7 +161,10 @@
 }
 
 .megalo-panel{{{cns}}} .megalo-handles-top {
-    height: 50%;
+    /* 10px shorter than the half-window: a dead margin above the envelope
+       area, so grabbing an ADSR breakpoint near the midline can no longer
+       accidentally drag SAMPLE/SKIP/SIZE/XFADE. */
+    height: calc(50% - 10px);
     top: 0;
 }
 
@@ -215,6 +218,20 @@
     position: absolute;
     top: 0;
     width: 2px;
+}
+
+/* Transparent rotor: MOD-UI applies its rotate() to THIS element, so
+   only the orange pointer turns while the dial's lighting/shadow gradient
+   stays fixed (rotating the shading looked like the whole knob cap spun). */
+.megalo-panel{{{cns}}} .megalo-knob-rotor {
+    border-radius: 50%;
+    bottom: 0;
+    cursor: ns-resize;
+    left: 0;
+    position: absolute;
+    right: 0;
+    top: 0;
+    transform-origin: 50% 50%;
 }
 
 /* Knob is centered on the 2px track line (same left formula as the
@@ -476,7 +493,9 @@
 .megalo-panel{{{cns}}} .megalo-controls-row {
     display: flex;
     flex: 1 1 0;
-    gap: 10px;
+    /* 8px: with 40px knobs this makes the five groups exactly fill the
+       668px row — at 10px/42px the GLOBAL group was clipped by the panel. */
+    gap: 8px;
     justify-content: space-between;
 }
 
@@ -528,7 +547,9 @@
     display: flex;
     flex-direction: column;
     user-select: none;
-    width: 42px;
+    /* 40px: 11 knobs across the row must fit the 668px between the panel
+       margins — at 42px the GLOBAL group overflowed past the right edge. */
+    width: 40px;
 }
 
 .megalo-panel{{{cns}}} .megalo-knob-dial {
