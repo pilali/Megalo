@@ -123,7 +123,7 @@ int main()
     acc(run_case("A2 + 15%% noise", {45}, 0.15f));
 
     printf("==== TOTAL  hits %d  misses %d  extras %d ====\n", H, M, E);
-    // CI gate: 17/20 is the current baseline (the perfectly-harmonic octave
-    // inside a chord — B3 hidden in B2 — is the documented ambiguous case).
-    return (H >= 17 && E == 0) ? 0 : 1;
+    // CI gate: 19/20 baseline (the remaining miss is E4 at the top of the
+    // 6-note open-E chord, fully shadowed by three lower notes' harmonics).
+    return (H >= 19 && E == 0) ? 0 : 1;
 }

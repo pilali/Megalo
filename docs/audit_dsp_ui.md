@@ -554,5 +554,27 @@ HN / bruit HN stéréo-enveloppé, #12 cible `make audit` en CI.
   cible `make audit` + job CI Linux (`audit-linux`) qui la joue à chaque
   push ; `tools/modgui_screenshot.js` régénère les captures modgui.
 
-Reste en pistes : phase locking du vocodeur de phase (#11), bruit HN
-stéréo/enveloppé, et l'amélioration de la récupération d'octaves NNLS.
+### Quatrième passe (solde final)
+
+- **Phase locking PV (#11)** : verrouillage de phase identité
+  (Laroche-Dolson) autour des pics spectraux + conservation de la fréquence
+  du contributeur le plus fort en cas de collision de bins. Ripple
+  d'enveloppe mesuré 3,99 → 3,38 dB sur tonalité complexe décalée de +7 st ;
+  le gain est surtout attendu sur matériau transitoire. Limitation
+  pré-existante documentée : le remap de bins disperse le lobe des
+  fondamentales graves (< ~500 Hz), où la voix décalée ressort faible — le
+  moteur granulaire (défaut) reste recommandé pour les graves.
+- **Bruit HN** : canal droit décorrélé (générateurs indépendants, mélangés
+  par `hn_width` — l'air s'élargit avec le pad au lieu de rester au centre)
+  et résidu mesuré sur la seconde moitié de la boucle (le transitoire de
+  médiator gonflait le souffle du pad en permanence).
+- **Octaves NNLS** : `PRUNE_REL` 0,08 → 0,05. La B3 masquée dans l'accord
+  open-E est retrouvée proprement par l'attribution EM (part de 5–8 % quand
+  tous les partiels sont partagés) : **19/20** au harnais de détection, zéro
+  extra même à 0,02 — l'abaissement est devenu sûr précisément parce que les
+  gardes anti-fantômes ont assaini le jeu de candidats. Gate CI relevé à
+  19/20. Seul reste le E4 au sommet de l'accord de 6 notes (ombré par trois
+  notes inférieures à la fois).
+
+L'audit est soldé. Piste future unique : un vrai décalage par pic (au lieu
+du remap de bins) pour les graves du phase vocoder.

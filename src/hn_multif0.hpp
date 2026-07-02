@@ -207,9 +207,15 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
         re[i] = loop[i] * w;
         im[i] = 0.0f;
         win_sum += w;
-        sig_ss += loop[i] * loop[i];        // raw signal power (for noise RMS)
     }
-    sig_ss = (L > 0) ? sig_ss / static_cast<float>(L) : 0.0f;
+    // Signal power for the noise residual: measured over the SECOND HALF of
+    // the analysed span only, so the pluck transient (which the window above
+    // merely down-weights for scoring) doesn't inflate the sustained noise
+    // level — the old full-span estimate turned every pick attack into a
+    // permanent hiss on the pad.
+    for (int i = L / 2; i < L; ++i)
+        sig_ss += loop[i] * loop[i];
+    sig_ss = (L > 1) ? sig_ss / static_cast<float>(L - L / 2) : 0.0f;
     for (int i = L; i < N; ++i) { re[i] = 0.0f; im[i] = 0.0f; }
 
     hnfft::fft(re, im, N);

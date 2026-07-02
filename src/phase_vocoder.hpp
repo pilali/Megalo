@@ -44,6 +44,8 @@ public:
         std::memset(_ana_freq,  0, sizeof _ana_freq);
         std::memset(_syn_mag,   0, sizeof _syn_mag);
         std::memset(_syn_freq,  0, sizeof _syn_freq);
+        std::memset(_src_mag,   0, sizeof _src_mag);
+        std::memset(_src_of,    0, sizeof _src_of);
         std::memset(_out_buf,   0, sizeof _out_buf);
         for (auto& c : _cx) c = {};
         _read_pos  = 0.0;
@@ -114,19 +116,65 @@ private:
         // ── Pitch shift: remap bin k → bin ⌊k × ratio + 0.5⌋ ────────────
         std::memset(_syn_mag,  0, sizeof _syn_mag);
         std::memset(_syn_freq, 0, sizeof _syn_freq);
+        std::memset(_src_mag,  0, sizeof _src_mag);
         for (int k = 0; k < BINS; k++) {
-            int dst = static_cast<int>(k * _ratio + 0.5f);
+            const int dst = static_cast<int>(k * _ratio + 0.5f);
             if (dst < BINS) {
-                _syn_mag[dst]  += _ana_mag[k];
-                _syn_freq[dst]  = _ana_freq[k] * _ratio;
+                _syn_mag[dst] += _ana_mag[k];
+                // On collisions keep the STRONGEST contributor's frequency
+                // and source bin (the old code kept whichever landed last).
+                if (_ana_mag[k] > _src_mag[dst]) {
+                    _src_mag[dst]  = _ana_mag[k];
+                    _syn_freq[dst] = _ana_freq[k] * _ratio;
+                    _src_of[dst]   = k;
+                }
             }
         }
 
-        // ── Synthesis: accumulate phase, build complex spectrum ────────────
+        // ── Synthesis phases with identity phase locking (Laroche-Dolson).
+        // Spectral PEAKS accumulate phase from their instantaneous frequency;
+        // the bins around each peak are locked to it, reproducing the
+        // analysis-side phase relationships. Free-running every bin (the old
+        // behaviour) let the bins of one partial drift apart across frames —
+        // the classic metallic/"phasey" vocoder smear.
         const float synth_expct = 2.0f * float(M_PI) * HOP / _sr;
-        for (int k = 0; k < BINS; k++) {
-            _syn_phase[k] += _syn_freq[k] * synth_expct;
-            _cx[k] = std::polar(_syn_mag[k], _syn_phase[k]);
+
+        int n_peaks = 0;
+        for (int j = 2; j < BINS - 2; ++j) {
+            const float m = _syn_mag[j];
+            if (m > 1e-9f &&
+                m >= _syn_mag[j - 1] && m >= _syn_mag[j - 2] &&
+                m >  _syn_mag[j + 1] && m >  _syn_mag[j + 2])
+                _peaks[n_peaks++] = j;
+        }
+
+        if (n_peaks == 0) {
+            // Silence / degenerate frame: plain per-bin accumulation.
+            for (int k = 0; k < BINS; k++) {
+                _syn_phase[k] += _syn_freq[k] * synth_expct;
+                _cx[k] = std::polar(_syn_mag[k], _syn_phase[k]);
+            }
+        } else {
+            // Peaks: normal phase accumulation (kept wrapped for precision).
+            for (int i = 0; i < n_peaks; ++i) {
+                const int p = _peaks[i];
+                _syn_phase[p] += _syn_freq[p] * synth_expct;
+                _syn_phase[p] -= 2.0f * float(M_PI) *
+                                 std::round(_syn_phase[p] * float(M_1_PI) * 0.5f);
+            }
+            // Every other bin: locked to its nearest peak with the analysis
+            // phase offset between their SOURCE bins.
+            int pi = 0;
+            for (int k = 0; k < BINS; k++) {
+                while (pi + 1 < n_peaks &&
+                       std::abs(_peaks[pi + 1] - k) <= std::abs(_peaks[pi] - k))
+                    ++pi;
+                const int p = _peaks[pi];
+                if (k != p)
+                    _syn_phase[k] = _syn_phase[p]
+                                  + (_ana_phase[_src_of[k]] - _ana_phase[_src_of[p]]);
+                _cx[k] = std::polar(_syn_mag[k], _syn_phase[k]);
+            }
         }
         // Hermitian symmetry for real output
         for (int k = BINS; k < N; k++)
@@ -189,6 +237,9 @@ private:
     float _ana_freq[BINS]       = {};
     float _syn_mag[BINS]        = {};
     float _syn_freq[BINS]       = {};
+    float _src_mag[BINS]        = {};   // strongest contributor per syn bin
+    int   _src_of[BINS]         = {};   // its analysis source bin
+    int   _peaks[BINS]          = {};   // per-frame peak list (phase locking)
     float _out_buf[OUTBUF]      = {};
     std::complex<float> _cx[N]  = {};
 

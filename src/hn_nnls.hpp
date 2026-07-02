@@ -30,7 +30,12 @@ namespace hnnnls {
 
 static constexpr int   MAXC      = 2 * hnq::MAX_NOTES;  // notes + their octaves
 static constexpr int   ITERS     = 40;
-static constexpr float PRUNE_REL = 0.08f;   // drop notes below this × loudest
+// Prune threshold for EM-refined candidates. 0.05 (was 0.08) lets a true
+// in-chord octave through — its EM share sits at 5–8 % when every partial is
+// shared with the lower note. Safe now that the greedy pass no longer feeds
+// lobe-skirt phantoms into the candidate set (80-cent guard + full-lobe
+// subtraction): lowering it adds zero extras across the detection suite.
+static constexpr float PRUNE_REL = 0.05f;   // drop notes below this × loudest
 static constexpr float COINCIDE_BINS = 1.5f; // partials within → shared group
 
 } // namespace hnnnls
