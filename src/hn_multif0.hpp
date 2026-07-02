@@ -63,7 +63,10 @@ static inline float peak_mag(const float* mag, int nbins, float bin) noexcept
     const float a = mag[c - 1], b = mag[c], cc = mag[c + 1];
     const float denom = a - 2.0f * b + cc;
     if (std::abs(denom) < 1e-12f) return b;
-    const float p = 0.5f * (a - cc) / denom;    // sub-bin offset [-0.5,0.5]
+    // Clamp the vertex offset: on the jagged skirt of a partially-subtracted
+    // lobe the unbounded parabola extrapolated to several times the true
+    // magnitude (measured 3.4x on a pure sine), inflating phantom notes.
+    const float p = std::min(0.5f, std::max(-0.5f, 0.5f * (a - cc) / denom));
     return b - 0.25f * (a - cc) * p;            // parabola vertex value
 }
 
@@ -265,16 +268,31 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
 
     // ── 3. Greedy multi-F0 extraction with harmonic subtraction ───────────
     static constexpr float REL_THRESH = 0.18f;  // stop below this × first note
-    float first_sal = 0.0f;
+    // Minimum spacing between accepted notes. Two fundamentals 60–80 cents
+    // apart cannot both be real on a fretted instrument; such picks are the
+    // residual skirt of an already-subtracted partial (the captured loop is
+    // shorter than the FFT, so the zero-padded Hann mainlobe spans several
+    // bins around every partial).
+    static constexpr float MIN_NOTE_CENTS = 80.0f;
+    // Mainlobe half-width in bins of the zero-padded Hann window: ±2 bins at
+    // L == N (the historical width — kept exactly so full-length analyses
+    // behave as before), wider (+1 safety) when the loop is shorter than the
+    // FFT and the lobe spreads across 2·N/L bins.
+    const int lobe_hw = std::min(8, (L >= N)
+        ? 2
+        : (int)std::ceil(2.0f * (float)N / (float)std::max(1, L)) + 1);
 
-    for (int note = 0; note < hnq::MAX_NOTES; ++note) {
+    float first_sal = 0.0f;
+    int   attempts  = 0;
+
+    while (out.n_notes < hnq::MAX_NOTES && attempts++ < 3 * hnq::MAX_NOTES) {
         // Pick the most salient remaining candidate.
         int   best_c = -1;
         float best_s = 0.0f;
         for (int c = 0; c < n_cand; ++c)
             if (cand_sal[c] > best_s) { best_s = cand_sal[c]; best_c = c; }
         if (best_c < 0) break;
-        if (note == 0) first_sal = best_s;
+        if (out.n_notes == 0) first_sal = best_s;
         else if (best_s < REL_THRESH * first_sal) break;
 
         float f0 = cand_f0[best_c];
@@ -321,6 +339,22 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
             }
         }
 
+        // Reject picks closer than MIN_NOTE_CENTS to an accepted note (lobe
+        // skirt phantoms) and blank their whole candidate neighbourhood so
+        // the next pass moves on to genuinely different pitches.
+        {
+            bool dup = false;
+            for (int i = 0; i < out.n_notes && !dup; ++i)
+                if (std::abs(1200.0f * std::log2(f0 / out.notes[i].f0)) < MIN_NOTE_CENTS)
+                    dup = true;
+            if (dup) {
+                for (int c = 0; c < n_cand; ++c)
+                    if (std::abs(1200.0f * std::log2(cand_f0[c] / f0)) < MIN_NOTE_CENTS)
+                        cand_sal[c] = 0.0f;
+                continue;
+            }
+        }
+
         // Record the note's harmonic amplitudes/phases, and subtract its comb.
         HNState& st = out.notes[out.n_notes];
         st = HNState{};
@@ -347,12 +381,16 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
             st.n_partials = k;
             harm_ss += 0.5f * amp * amp;
 
-            // Soft-subtract a small triangular bump (±2 bins) so this comb is
-            // not redetected and shared harmonics are partly freed for others.
-            for (int d = -2; d <= 2; ++d) {
+            // Soft-subtract a triangular bump covering the WHOLE zero-padded
+            // mainlobe (±lobe_hw bins) so this comb is not redetected. The
+            // old fixed ±2 bins left most of the lobe skirt behind whenever
+            // the loop was shorter than the FFT — the skirt then came back
+            // as phantom "notes" a few bins away, with inflated amplitudes.
+            for (int d = -lobe_hw; d <= lobe_hw; ++d) {
                 const int j = ib + d;
                 if (j < 0 || j >= NB) continue;
-                const float wd = 1.0f - 0.25f * static_cast<float>(std::abs(d));
+                const float wd = 1.0f - static_cast<float>(std::abs(d))
+                                        / static_cast<float>(lobe_hw + 1);
                 mag[j] = std::max(0.0f, mag[j] - a * wd);
             }
         }
