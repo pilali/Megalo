@@ -33,7 +33,7 @@ static void run(const char* label, MegaloParams pp) {
     // 0.3s silence, then sustained tone (onset at 0.3s).
     for(int i=0;i<N;++i) in[i] = (i> (int)(0.3f*SR)) ? tone(i) : 0.0f;
     const int B=64;
-    for(int i=0;i<N;i+=B){ int n=std::min(B,N-i); megalo_dsp_process(d,&pp,in.data()+i,out.data()+i,n); }
+    for(int i=0;i<N;i+=B){ int n=std::min(B,N-i); megalo_dsp_process(d,&pp,in.data()+i,out.data()+i,n); megalo_dsp_flush_analysis(d); }
     // Wet envelope = |out| since blend=1 (dry is the same tone, but measure post-onset rise).
     // Report wet RMS in 50ms windows after the loop is ready (~0.5s in).
     printf("%-26s wet RMS @ t= ", label);

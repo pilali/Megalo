@@ -509,3 +509,50 @@ HN / bruit HN stéréo-enveloppé, #12 cible `make audit` en CI.
   parité JUCE) ; potentiomètres restructurés avec un rotor transparent
   (`.megalo-knob-rotor` porte le mod-role) pour que seul le curseur orange
   tourne, l'ombrage du cadran restant fixe.
+
+### Troisième passe (clacs MegaloHN persistants + solde de l'audit)
+
+- **Cause racine des clacs HN : notes-fantômes de l'analyse.** Sur une
+  boucle plus courte que la FFT (zero-padding ~2,8×), le lobe principal de
+  Hann s'étale sur ±5–6 bins mais la soustraction gloutonne n'en retirait
+  que ±2 : la jupe résiduelle était re-détectée comme de « nouvelles notes »
+  à ±8 Hz de la vraie, avec des amplitudes explosées par la parabole non
+  bornée de `peak_mag` (mesuré : un sinus 220 Hz pur → 3 notes, amps 0,40 +
+  0,65 + **1,35**). La somme battait à ~8–17 Hz et saturait l'écrêteur à
+  chaque crête — les clacs systématiques. Correctifs : soustraction sur
+  toute la largeur réelle du lobe (fonction du padding), clamp de la
+  parabole, et garde d'espacement minimal de 80 cents entre notes acceptées
+  (physiquement impossible en dessous sur un instrument fretté). Après
+  correction : 1 note exacte sur le sinus, calibration parfaite sur l'E3
+  (série 0,25/k retrouvée), clics ≤ ×1,5 la pente d'entrée. Coût assumé :
+  `hn_test` passe de 18/20 à 17/20 (l'octave-dans-accord parfaitement
+  harmonique B2/B3, cas documenté comme fondamentalement ambigu, n'était
+  retrouvée que par le mécanisme de jupe supprimé).
+- **§2.5 : banc de release (crossfade d'accords).** À LoopReady, l'accord
+  sortant (états d'oscillateurs inclus) et son enveloppe en release sont
+  copiés dans un banc dédié qui continue de sonner pendant que le nouvel
+  accord attaque — le wet additif n'est plus jamais coupé (l'ancien mute de
+  15 ms tronquait le pad de façon très audible). Seul le fallback granulaire
+  reste gaté pendant la capture (son buffer est écrasé sur place). Vérifié :
+  après une seconde capture, l'ancien pad décroît sur son release complet
+  (0,18 → 0,03 sur 1,6 s) pendant que le nouveau monte.
+- **#4 : analyse dans un worker thread.** `hn_multif0_analyze` (FFT 16384 +
+  NNLS, quelques ms — au-delà du budget d'un bloc de 128 échantillons sur
+  Dwarf/Pi) tourne désormais sur un thread dédié : memcpy de la boucle + un
+  flip atomique côté RT, résultat consommé à la frontière de bloc suivante.
+  Le dry boosté + le banc de release couvrent la latence supplémentaire
+  (quelques ms). `megalo_dsp_flush_analysis()` garantit le déterminisme des
+  rendus hors-ligne (plus rapides que le temps réel).
+- **#9** : cutoff/Q lissés (~30 ms) vers leur cible — plus de zipper en
+  automation ; BP passé en « constant peak gain » (le Q règle la largeur,
+  plus le niveau : l'ancienne forme gagnait +20 dB à Q=10).
+- **#11 (partiel)** : les phases mesurées (`harm_phase`) initialisent les
+  oscillateurs additifs (facteur de crête naturel au lieu de l'empilement
+  cohérent phase-zéro) ; répartition dorée en secours.
+- **#12** : suite d'audit objective committée (`tools/click_test.cpp`,
+  `grain_test.cpp`, `release_test.cpp`, gate de sortie sur `hn_test`) +
+  cible `make audit` + job CI Linux (`audit-linux`) qui la joue à chaque
+  push ; `tools/modgui_screenshot.js` régénère les captures modgui.
+
+Reste en pistes : phase locking du vocodeur de phase (#11), bruit HN
+stéréo/enveloppé, et l'amélioration de la récupération d'octaves NNLS.

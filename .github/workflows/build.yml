@@ -25,6 +25,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Linux: LV2 build + the objective sound-quality regression suite
+  # (multi-F0 detection, dry→wet click detector, grain pumping meter,
+  # HN release-bank check — see tools/ and `make audit`).
+  audit-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install LV2 headers
+        run: sudo apt-get update && sudo apt-get install -y lv2-dev pkg-config
+      - name: Build LV2 plugins
+        run: make
+      - name: Sound-quality audit
+        run: make audit
+
   macos:
     runs-on: macos-14
     steps:
