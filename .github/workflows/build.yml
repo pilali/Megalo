@@ -10,6 +10,7 @@ on:
       - claude/exciting-darwin-r1yhi9
       - claude/hn-polyphonic-analysis
       - claude/megalo-unified
+      - claude/plugin-audio-ui-analysis-zj2q9a
     tags: [ 'v*' ]
   pull_request:
     branches: [ master ]
