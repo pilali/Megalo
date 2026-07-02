@@ -43,7 +43,20 @@ public:
         _sr          = sr;
         _pitch_ratio = 1.0f;
         std::memcpy(_eff_amp, st.harm_amp, sizeof _eff_amp);   // neutral timbre
-        std::memset(_phase, 0, sizeof _phase);
+        // Start each partial at its MEASURED phase: the resynthesized wave
+        // then resembles the source instead of the all-zero-phase crest stack
+        // (which peaked hard at the attack and clipped earlier). Notes whose
+        // analyzer left no phases (NNLS-refined) get a golden-ratio spread —
+        // anything but coherent zeros.
+        bool has_phase = false;
+        for (int k = 0; k < st.n_partials && !has_phase; ++k)
+            if (st.harm_phase[k] != 0.0f) has_phase = true;
+        for (int k = 0; k < HN_MAX_PARTIALS; ++k) {
+            float frac = (k + 1) * 0.6180339887f;
+            frac -= std::floor(frac);
+            _phase[k] = has_phase ? st.harm_phase[k]
+                                  : (frac * 2.0f - 1.0f) * float(M_PI);
+        }
         for (int b = 0; b < N_NOISE; ++b)
             _noise_st[b] = static_cast<uint32_t>((b + 1) * 2654435761u);
         std::memset(_noise_lp, 0, sizeof _noise_lp);
