@@ -48,6 +48,14 @@ public:
     // modgui monitoredOutputs subscription.
     std::atomic<float> triggerPulse { 0.0f };
 
+    // Capture-status mirror (megalo_dsp_pad_notes), polled each block for the
+    // editor's readout: -1 = nothing captured, 0 = unpitched texture, n = the
+    // pad's fundamentals in padF0[0..n-1] (Hz, ascending). Written field by
+    // field from the audio thread; a display can tolerate a torn frame.
+    static constexpr int kMaxPadNotes = 6;
+    std::atomic<int>   padNoteCount { -1 };
+    std::atomic<float> padF0[kMaxPadNotes] { };
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 

@@ -203,6 +203,11 @@ private:
 
     WindowPanel window;
 
+    // Capture-status readout (fed by megalo_dsp_pad_notes via the processor):
+    // the detected chord as note names for MegaloHN, the loop's fundamental
+    // for the granular Megalo, "NO PITCH" for unpitched textures.
+    juce::String padStatus { "—" };
+
     // Bottom control row.
     juce::OwnedArray<KnobControl> knobs;
     juce::OwnedArray<LedToggle>   leds;

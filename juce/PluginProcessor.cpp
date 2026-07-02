@@ -202,6 +202,13 @@ void MegaloAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
             juce::FloatVectorOperations::copy(buffer.getWritePointer(ch), mono, n);
     }
     triggerPulse.store(megalo_dsp_trigger(dsp), std::memory_order_relaxed);
+
+    // Mirror the capture status for the editor's readout.
+    float f0[kMaxPadNotes];
+    const int nNotes = megalo_dsp_pad_notes(dsp, f0, kMaxPadNotes);
+    for (int i = 0; i < nNotes && i < kMaxPadNotes; ++i)
+        padF0[i].store(f0[i], std::memory_order_relaxed);
+    padNoteCount.store(nNotes, std::memory_order_relaxed);
 }
 
 juce::AudioProcessorEditor* MegaloAudioProcessor::createEditor()

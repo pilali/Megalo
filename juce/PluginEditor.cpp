@@ -12,6 +12,15 @@ juce::Font megalo::font(float height, bool bold)
 }
 
 namespace {
+// f0 (Hz) → note name for the capture readout ("A2", "E3"…). A4 = 440 Hz.
+juce::String noteName(float f)
+{
+    if (f <= 0.0f) return {};
+    const int m = juce::roundToInt(69.0 + 12.0 * std::log2(f / 440.0));
+    static const char* names[12] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
+    return juce::String(names[((m % 12) + 12) % 12]) + juce::String(m / 12 - 1);
+}
+
 // Format a handle readout the way the modgui does (long ms collapse to s).
 juce::String fmtValue(const juce::String& label, float v)
 {
@@ -605,7 +614,13 @@ MegaloEditor::MegaloEditor(MegaloAudioProcessor& p)
     for (auto* l : leds) addAndMakeVisible(l);
 
     addAndMakeVisible(filterType);
+#ifndef MEGALO_HN_SYNTH
+    // Granular build only: the pitch voices run on the selected engine. In
+    // the MegaloHN build the switch would only affect the granular FALLBACK
+    // (the additive engine replaces the pitch voices whenever the analysis
+    // finds notes), so its slot shows the capture readout instead.
     addAndMakeVisible(pitchEngine);
+#endif
 
 #ifdef MEGALO_HN_SYNTH
     setSize(720, 470);   // extra row for TIMBRE
@@ -626,6 +641,23 @@ void MegaloEditor::timerCallback()
     flashLevel = pulse > 0.5f ? 1.0f : flashLevel * 0.78f;
     if (flashLevel < 0.01f) flashLevel = 0.0f;
     window.threshold.setFlash(flashLevel);
+
+    // Capture-status readout: what the engine actually made of the last
+    // freeze (the analyzed chord / the loop's fundamental / an unpitched
+    // texture) — the pad's behaviour is driven by this, so show it.
+    juce::String s;
+    const int n = proc.padNoteCount.load(std::memory_order_relaxed);
+    if (n < 0)       s = juce::String::fromUTF8("—");
+    else if (n == 0) s = "NO PITCH";
+    else
+        for (int i = 0; i < n && i < MegaloAudioProcessor::kMaxPadNotes; ++i) {
+            if (i > 0) s << "  ";
+            s << noteName(proc.padF0[i].load(std::memory_order_relaxed));
+        }
+    if (s != padStatus) {
+        padStatus = s;
+        repaint(390, 8, 306, 42);   // the header status/switch area
+    }
 }
 
 void MegaloEditor::paint(juce::Graphics& g)
@@ -638,17 +670,38 @@ void MegaloEditor::paint(juce::Graphics& g)
     g.setColour(megalo::kWhite.withAlpha(0.05f));
     g.drawRoundedRectangle(b.reduced(0.5f), 14.0f, 1.0f);
 
-    // MEGALO brand.
+    // Brand.
     g.setColour(megalo::kOrange);
     g.setFont(megalo::font(30.0f, true));
+#ifdef MEGALO_HN_SYNTH
+    g.drawText("M E G A L O  H N", juce::Rectangle<int>(26, 12, 380, 36),
+               juce::Justification::left, false);
+#else
     g.drawText("M E G A L O", juce::Rectangle<int>(26, 12, 360, 36),
                juce::Justification::left, false);
+#endif
 
+#ifndef MEGALO_HN_SYNTH
     // Pitch-engine switch caption (top-right, above the switch).
     g.setColour(megalo::kWhite.withAlpha(0.55f));
     g.setFont(megalo::font(10.0f, true));
     g.drawText("PITCH ENGINE", juce::Rectangle<int>(560, 12, 134, 10),
                juce::Justification::centred, false);
+#endif
+
+    // Capture-status readout. MegaloHN: in the pitch-engine slot (top-right);
+    // Megalo: between the brand and the switch.
+#ifdef MEGALO_HN_SYNTH
+    const juce::Rectangle<int> stCap(560, 12, 134, 10), stVal(560, 24, 134, 22);
+#else
+    const juce::Rectangle<int> stCap(400, 12, 150, 10), stVal(400, 24, 150, 22);
+#endif
+    g.setColour(megalo::kWhite.withAlpha(0.55f));
+    g.setFont(megalo::font(10.0f, true));
+    g.drawText("CAPTURE", stCap, juce::Justification::centred, false);
+    g.setColour(megalo::kWhite.withAlpha(0.9f));
+    g.setFont(megalo::font(13.0f, true));
+    g.drawText(padStatus, stVal, juce::Justification::centred, false);
 
     // Time-axis ruler above the window (0..500 ms).
     const int rulerX = 26, rulerY = 52, rulerW = 668;
@@ -700,8 +753,11 @@ void MegaloEditor::paint(juce::Graphics& g)
 
 void MegaloEditor::resized()
 {
+#ifndef MEGALO_HN_SYNTH
     // Pitch-engine switch, top-right (under its caption, above the window).
+    // The MegaloHN build shows the capture readout in this slot instead.
     pitchEngine.setBounds(560, 24, 134, 22);
+#endif
 
     window.setBounds(26, 60, 668, 170);
 

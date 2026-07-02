@@ -576,5 +576,12 @@ HN / bruit HN stéréo-enveloppé, #12 cible `make audit` en CI.
   19/20. Seul reste le E4 au sommet de l'accord de 6 notes (ombré par trois
   notes inférieures à la fois).
 
+- **Éditeurs JUCE actualisés** : témoin de capture « CAPTURE » alimenté par
+  le nouveau getter `megalo_dsp_pad_notes` — MegaloHN affiche l'accord
+  analysé en noms de notes (« E2 B2 E3 »), Megalo la fondamentale de la
+  période de boucle, « NO PITCH » en texture non tonale. Côté HN le switch
+  PITCH ENGINE (qui ne pilotait que le fallback granulaire, trompeur) cède
+  sa place au témoin, et le titre devient « MEGALO HN ».
+
 L'audit est soldé. Piste future unique : un vrai décalage par pic (au lieu
 du remap de bins) pour les graves du phase vocoder.

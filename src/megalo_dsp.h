@@ -76,6 +76,16 @@ void       megalo_dsp_process_stereo(MegaloDsp*, const MegaloParams*,
    the post-onset hold window is active, 0.0f otherwise. */
 float      megalo_dsp_trigger(const MegaloDsp*);
 
+/* Capture status for GUIs. Fills f0[] with up to `max` fundamentals (Hz,
+   ascending) of the current pad and returns their count:
+     -1  nothing captured yet
+      0  captured, but no pitched content (granular texture)
+      n  pitched pad — MegaloHN: the analyzed chord; Megalo: the single
+         fundamental recovered from the loop's dominant period.
+   Call from the audio thread (same thread as process); wrappers mirror the
+   values into whatever their GUI polls. */
+int        megalo_dsp_pad_notes(const MegaloDsp*, float* f0, int max);
+
 /* Offline/test helper — NOT for the audio thread. The MegaloHN analysis runs
    on a worker thread in wall-clock time; offline renders (faster than
    real-time) would otherwise see it land hundreds of audio-milliseconds

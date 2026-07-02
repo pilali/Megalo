@@ -830,3 +830,25 @@ void megalo_dsp_flush_analysis(MegaloDsp* p)
     (void)p;
 #endif
 }
+
+int megalo_dsp_pad_notes(const MegaloDsp* p, float* f0, int max)
+{
+    if (!p->freeze.is_frozen()) return -1;
+#ifdef MEGALO_HN_SYNTH
+    if (p->hn_state.valid && p->hn_state.n_notes > 0) {
+        const int n = p->hn_state.n_notes;
+        if (f0 && max > 0) {
+            float tmp[hnq::MAX_NOTES];
+            for (int i = 0; i < n; ++i) tmp[i] = p->hn_state.notes[i].f0;
+            std::sort(tmp, tmp + n);
+            for (int i = 0; i < n && i < max; ++i) f0[i] = tmp[i];
+        }
+        return n;
+    }
+#endif
+    // Granular fallback (or non-HN build): the loop's dominant period.
+    const float T = p->freeze.period();
+    if (T <= 0.0f) return 0;
+    if (max > 0 && f0) f0[0] = static_cast<float>(p->sample_rate) / T;
+    return 1;
+}

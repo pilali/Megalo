@@ -504,3 +504,12 @@ void megalo_dsp_flush_analysis(MegaloDsp*)
 {
     /* Granular build: analysis is synchronous (there is none) — no-op. */
 }
+
+int megalo_dsp_pad_notes(const MegaloDsp* p, float* f0, int max)
+{
+    if (!p->freeze.is_frozen()) return -1;
+    const float T = p->freeze.period();
+    if (T <= 0.0f) return 0;
+    if (max > 0 && f0) f0[0] = static_cast<float>(p->sample_rate) / T;
+    return 1;
+}
