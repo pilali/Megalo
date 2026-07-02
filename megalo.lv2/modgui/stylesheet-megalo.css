@@ -234,9 +234,17 @@
     z-index: 1;
 }
 
-/* ── Bottom handles: ADSR, vertical drag ────────────────
+/* ── Bottom handles: ADSR breakpoints dragged on the curve ──
    Per-column track is hidden — the envelope SVG curve
-   below provides the visual continuity instead. */
+   below provides the visual continuity instead. The drag is
+   handled by the container (nearest breakpoint wins), so the
+   columns themselves only carry labels/readouts. */
+.megalo-panel{{{cns}}} .megalo-handles-bottom .megalo-handle {
+    cursor: pointer;           /* the container receives the drag (bubbling) */
+}
+.megalo-panel{{{cns}}} .megalo-handles-bottom {
+    cursor: pointer;
+}
 .megalo-panel{{{cns}}} .megalo-handles-bottom .megalo-handle-track {
     display: none;
 }

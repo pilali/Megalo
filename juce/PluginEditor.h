@@ -104,25 +104,51 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TimeHandle)
 };
 
-// ── Bottom ADSR handle: dot that slides vertically ───────────────────────────
-class EnvHandle : public juce::Component
+// ── ADSR envelope editor: breakpoints dragged ON the curve itself ────────────
+// A/D/R drag horizontally (they are TIMES — the old per-column vertical drag
+// moved the dot sideways, which was the main source of confusion), S drags
+// vertically. Times sit on a fixed per-segment axis scaled by the parameter's
+// own (log-skewed) 0..1, so moving one handle never rescales the others.
+class EnvelopeEditor : public juce::Component
 {
 public:
-    EnvHandle(juce::AudioProcessorValueTreeState&, const juce::String& paramID,
-              const juce::String& label);
+    explicit EnvelopeEditor(juce::AudioProcessorValueTreeState&);
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
-    float getNorm() const { return norm; }
+    void mouseMove(const juce::MouseEvent&) override;
+    void mouseExit(const juce::MouseEvent&) override;
+
 private:
-    void setFromY(int y);
-    juce::RangedAudioParameter* param = nullptr;
-    std::unique_ptr<juce::ParameterAttachment> attachment;
-    juce::String label;
-    float norm = 0.5f;
-    float value = 0.0f;
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EnvHandle)
+    struct Handle {
+        juce::RangedAudioParameter* param = nullptr;
+        std::unique_ptr<juce::ParameterAttachment> attachment;
+        float value = 0.0f;   // denormalised, for the readout
+        float norm  = 0.0f;   // 0..1 through the parameter's (skewed) range
+    };
+    enum Target { None = -1, A = 0, D = 1, S = 2, R = 3 };
+
+    void bind(Handle&, juce::AudioProcessorValueTreeState&, const char* id);
+
+    // Fixed time axis: one segment per A/D/R phase plus the sustain hold.
+    float segW()   const { return (float) getWidth() * 0.27f; }
+    float holdW()  const { return (float) getWidth() * 0.19f; }
+    float curveH() const;
+    float yOf(float lvl) const;
+    float xA() const { return segW() * hA.norm; }
+    float xD() const { return xA() + segW() * hD.norm; }
+    float xH() const { return xD() + holdW(); }
+    float xR() const { return xH() + segW() * hR.norm; }
+    juce::Point<float> dotPos(Target) const;
+    Target hitTarget(juce::Point<float>) const;
+    void applyDrag(const juce::MouseEvent&);
+    Handle& handleFor(Target t) { return t == A ? hA : t == D ? hD : t == S ? hS : hR; }
+
+    Handle hA, hD, hS, hR;
+    Target drag  = None;
+    Target hover = None;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EnvelopeEditor)
 };
 
 // ── Onset-threshold line: horizontal line dragged vertically, flashes on onset
@@ -146,8 +172,8 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ThresholdLine)
 };
 
-// ── The central orange window: bg + waveform + midline + ADSR curve, and it
-//    owns the in-window handles (sample/skip/grain/xfade, A/D/S/R, threshold).
+// ── The central orange window: bg + waveform + midline, and it owns the
+//    in-window handles (sample/skip/grain/xfade, the ADSR editor, threshold).
 class WindowPanel : public juce::Component
 {
 public:
@@ -156,9 +182,8 @@ public:
     void resized() override;
     ThresholdLine threshold;
 private:
-    juce::AudioProcessorValueTreeState& apvts;
     juce::OwnedArray<TimeHandle> topHandles;
-    juce::OwnedArray<EnvHandle>  envHandles;  // A, D, S, R
+    EnvelopeEditor envEditor;   // A, D, S, R on the curve (bottom half)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WindowPanel)
 };
 

@@ -12,11 +12,13 @@ juce::Font megalo::font(float height, bool bold)
 }
 
 namespace {
-// Format a handle readout the way the modgui does.
+// Format a handle readout the way the modgui does (long ms collapse to s).
 juce::String fmtValue(const juce::String& label, float v)
 {
     if (label == "S")                        // sustain 0..1
         return juce::String(v, 2);
+    if (v >= 1000.0f)
+        return juce::String(v / 1000.0f, v >= 10000.0f ? 1 : 2) + " s";
     return juce::String(juce::roundToInt(v)) + " ms";
 }
 } // namespace
@@ -68,6 +70,19 @@ KnobControl::KnobControl(APVTS& apvts, const juce::String& paramID,
     slider.setLookAndFeel(lnf);
     addAndMakeVisible(slider);
     attachment = std::make_unique<APVTS::SliderAttachment>(apvts, paramID, slider);
+
+    // Value feedback + resets: the knobs used to be silent (no way to read
+    // the cutoff in Hz or a pitch in semitones without the host generic view).
+    if (auto* p = apvts.getParameter(paramID)) {
+        slider.setDoubleClickReturnValue(true, p->convertFrom0to1(p->getDefaultValue()));
+        const auto unit = p->getLabel();
+        if (unit.isNotEmpty())
+            slider.setTextValueSuffix(" " + unit);
+        slider.setNumDecimalPlacesToDisplay(
+            apvts.getParameterRange(paramID).interval >= 1.0f ? 0 : 2);
+    }
+    slider.setPopupDisplayEnabled(true, false, nullptr);   // bubble while dragging
+    slider.setTitle(paramID);
 }
 
 KnobControl::~KnobControl()
@@ -256,49 +271,153 @@ void TimeHandle::paint(juce::Graphics& g)
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// EnvHandle — vertical ADSR marker (bottom row of the window).
+// EnvelopeEditor — ADSR breakpoints dragged directly on the curve.
 // ════════════════════════════════════════════════════════════════════════════
-EnvHandle::EnvHandle(APVTS& apvts, const juce::String& paramID, const juce::String& lbl)
-    : label(lbl)
+namespace {
+constexpr int   kEnvLabelStrip = 28;    // bottom strip for the A/D/S/R readouts
+constexpr float kEnvHitRadius  = 16.0f; // grab radius around a breakpoint
+} // namespace
+
+EnvelopeEditor::EnvelopeEditor(APVTS& a)
 {
-    param = apvts.getParameter(paramID);
-    if (param) {
-        attachment = std::make_unique<juce::ParameterAttachment>(
-            *param, [this](float v) {
-                value = v;
-                norm  = param->getNormalisableRange().convertTo0to1(v);
-                repaint();
-                // The dot rides on the envelope curve drawn by the parent.
-                if (auto* parent = getParentComponent())
-                    parent->repaint();
-            });
-        attachment->sendInitialUpdate();
+    bind(hA, a, "env_attack");
+    bind(hD, a, "env_decay");
+    bind(hS, a, "env_sustain");
+    bind(hR, a, "env_release");
+}
+
+void EnvelopeEditor::bind(Handle& h, APVTS& a, const char* id)
+{
+    h.param = a.getParameter(id);
+    if (!h.param) return;
+    h.attachment = std::make_unique<juce::ParameterAttachment>(
+        *h.param, [this, &h](float v) {
+            h.value = v;
+            h.norm  = h.param->getNormalisableRange().convertTo0to1(v);
+            repaint();
+        });
+    h.attachment->sendInitialUpdate();
+}
+
+float EnvelopeEditor::curveH() const { return (float) getHeight() - (float) kEnvLabelStrip; }
+float EnvelopeEditor::yOf(float lvl) const { return (1.0f - lvl) * curveH(); }
+
+juce::Point<float> EnvelopeEditor::dotPos(Target t) const
+{
+    switch (t) {
+        case A:  return { xA(), yOf(1.0f) };
+        case D:  return { xD(), yOf(hS.value) };
+        case S:  return { (xD() + xH()) * 0.5f, yOf(hS.value) };
+        default: return { xR(), yOf(0.0f) };
     }
-    setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
 }
 
-void EnvHandle::setFromY(int y)
+EnvelopeEditor::Target EnvelopeEditor::hitTarget(juce::Point<float> p) const
 {
-    if (!param) return;
-    const float n = juce::jlimit(0.0f, 1.0f, 1.0f - (float) y / (float) juce::jmax(1, getHeight()));
-    attachment->setValueAsPartOfGesture(param->getNormalisableRange().convertFrom0to1(n));
+    Target best = None;
+    float bestD = kEnvHitRadius;
+    for (Target t : { A, D, S, R }) {
+        const float d = dotPos(t).getDistanceFrom(p);
+        if (d < bestD) { bestD = d; best = t; }
+    }
+    return best;
 }
 
-void EnvHandle::mouseDown(const juce::MouseEvent& e) { if (attachment) { attachment->beginGesture(); setFromY(e.y); } }
-void EnvHandle::mouseDrag(const juce::MouseEvent& e) { setFromY(e.y); }
-void EnvHandle::mouseUp  (const juce::MouseEvent&)   { if (attachment) attachment->endGesture(); }
-
-void EnvHandle::paint(juce::Graphics& g)
+void EnvelopeEditor::applyDrag(const juce::MouseEvent& e)
 {
-    // The knob dot itself is drawn by WindowPanel on the envelope curve;
-    // this component only handles the drag gesture and the label/readout.
-    g.setColour(megalo::kWhite.withAlpha(0.9f));
-    g.setFont(megalo::font(11.0f, true));
-    g.drawText(label, getLocalBounds().removeFromBottom(14), juce::Justification::centred, false);
-    g.setColour(megalo::kWhite.withAlpha(0.62f));
-    g.setFont(megalo::font(10.0f));
-    g.drawText(fmtValue(label, value), juce::Rectangle<int>(0, getHeight() - 26, getWidth(), 12),
-               juce::Justification::centred, false);
+    if (drag == None) return;
+    Handle& h = handleFor(drag);
+    if (!h.attachment) return;
+
+    float n = 0.0f;
+    switch (drag) {
+        // Times: horizontal, each within its own fixed segment of the axis.
+        case A: n = (float) e.x / segW();          break;
+        case D: n = ((float) e.x - xA()) / segW(); break;
+        case R: n = ((float) e.x - xH()) / segW(); break;
+        // Sustain: vertical (level).
+        default: n = 1.0f - (float) e.y / curveH(); break;
+    }
+    n = juce::jlimit(0.0f, 1.0f, n);
+    h.attachment->setValueAsPartOfGesture(h.param->getNormalisableRange().convertFrom0to1(n));
+}
+
+void EnvelopeEditor::mouseDown(const juce::MouseEvent& e)
+{
+    drag = hitTarget(e.position);
+    if (drag == None) return;
+    if (handleFor(drag).attachment != nullptr)
+        handleFor(drag).attachment->beginGesture();
+    applyDrag(e);
+}
+
+void EnvelopeEditor::mouseDrag(const juce::MouseEvent& e) { applyDrag(e); }
+
+void EnvelopeEditor::mouseUp(const juce::MouseEvent&)
+{
+    if (drag != None && handleFor(drag).attachment != nullptr)
+        handleFor(drag).attachment->endGesture();
+    drag = None;
+}
+
+void EnvelopeEditor::mouseMove(const juce::MouseEvent& e)
+{
+    const Target t = hitTarget(e.position);
+    if (t != hover) { hover = t; repaint(); }
+    setMouseCursor(t == None ? juce::MouseCursor::NormalCursor
+                 : t == S    ? juce::MouseCursor::UpDownResizeCursor
+                             : juce::MouseCursor::LeftRightResizeCursor);
+}
+
+void EnvelopeEditor::mouseExit(const juce::MouseEvent&)
+{
+    if (hover != None) { hover = None; repaint(); }
+    setMouseCursor(juce::MouseCursor::NormalCursor);
+}
+
+void EnvelopeEditor::paint(juce::Graphics& g)
+{
+    const float w = (float) getWidth();
+
+    // Envelope curve + fill on the fixed axis.
+    juce::Path env;
+    env.startNewSubPath(0.0f, yOf(0.0f));
+    env.lineTo(xA(), yOf(1.0f));
+    env.lineTo(xD(), yOf(hS.value));
+    env.lineTo(xH(), yOf(hS.value));
+    env.lineTo(xR(), yOf(0.0f));
+    g.setColour(megalo::kWhite.withAlpha(0.85f));
+    g.strokePath(env, juce::PathStrokeType(1.5f));
+
+    juce::Path fill = env;
+    fill.lineTo(xR(), curveH());
+    fill.lineTo(0.0f, curveH());
+    fill.closeSubPath();
+    g.setColour(megalo::kWhite.withAlpha(0.14f));
+    g.fillPath(fill);
+
+    // Breakpoint dots (hovered/dragged one highlighted).
+    for (Target t : { A, D, S, R }) {
+        const auto pt = dotPos(t);
+        const bool hot = (t == drag) || (drag == None && t == hover);
+        g.setColour(hot ? megalo::kWhite : juce::Colour(0xffffd9a8));
+        const float r = hot ? 7.0f : 6.0f;
+        g.fillEllipse(pt.x - r, pt.y - r, 2.0f * r, 2.0f * r);
+    }
+
+    // Label + value strip (fixed columns so the readouts never overlap).
+    const char* names[4] = { "A", "D", "S", "R" };
+    const Handle* hs[4]  = { &hA, &hD, &hS, &hR };
+    const int colW = (int) w / 4;
+    for (int i = 0; i < 4; ++i) {
+        juce::Rectangle<int> col(i * colW, (int) curveH(), colW, kEnvLabelStrip);
+        g.setColour(megalo::kWhite.withAlpha(0.9f));
+        g.setFont(megalo::font(11.0f, true));
+        g.drawText(names[i], col.removeFromTop(14), juce::Justification::centred, false);
+        g.setColour(megalo::kWhite.withAlpha(0.62f));
+        g.setFont(megalo::font(10.0f));
+        g.drawText(fmtValue(names[i], hs[i]->value), col, juce::Justification::centred, false);
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -319,10 +438,14 @@ ThresholdLine::ThresholdLine(APVTS& apvts, const juce::String& paramID)
 }
 
 // Only grab clicks near the line, so the handles underneath stay reachable.
-bool ThresholdLine::hitTest(int, int y)
+// When the line sits in the bottom half (low thresholds — the default 0.15
+// puts it right across the ADSR editor), only the left grab-dot area still
+// takes the click; everywhere else the envelope breakpoints win.
+bool ThresholdLine::hitTest(int x, int y)
 {
     const int lineY = juce::roundToInt((1.0f - norm) * (float) getHeight());
-    return std::abs(y - lineY) < 6;
+    if (std::abs(y - lineY) >= 6) return false;
+    return lineY < getHeight() / 2 || x < 24;
 }
 
 void ThresholdLine::setFromY(int y)
@@ -362,20 +485,19 @@ void ThresholdLine::paint(juce::Graphics& g)
 // ════════════════════════════════════════════════════════════════════════════
 // WindowPanel — orange scope window with waveform, midline, ADSR curve.
 // ════════════════════════════════════════════════════════════════════════════
-WindowPanel::WindowPanel(APVTS& a) : threshold(a, "onset_threshold"), apvts(a)
+WindowPanel::WindowPanel(APVTS& a)
+    : threshold(a, "onset_threshold"), envEditor(a)
 {
-    // Grain Size / Crossfade are granular-only; the polyphonic H+N engine
-    // ignores them (they still drive the granular fallback for non-pitched
-    // input, so the LV2 ports/parameters are kept — just not surfaced here).
+    // Grain Size / Crossfade drive the granular engine (and the granular
+    // fallback of the H+N build), so they are surfaced in both builds —
+    // they used to exist only in the host generic view.
     topHandles.add(new TimeHandle(a, "sample_ms",      "SAMPLE", juce::Colour(0xfffff5e6)));
     topHandles.add(new TimeHandle(a, "attack_skip_ms", "SKIP",   juce::Colour(0xfffff5e6)));
+    topHandles.add(new TimeHandle(a, "grain_size_ms",  "SIZE",   juce::Colour(0xffffd9a8)));
+    topHandles.add(new TimeHandle(a, "grain_xfade_ms", "XFADE",  juce::Colour(0xffffd9a8)));
     for (auto* h : topHandles) addAndMakeVisible(h);
 
-    envHandles.add(new EnvHandle(a, "env_attack",  "A"));
-    envHandles.add(new EnvHandle(a, "env_decay",   "D"));
-    envHandles.add(new EnvHandle(a, "env_sustain", "S"));
-    envHandles.add(new EnvHandle(a, "env_release", "R"));
-    for (auto* h : envHandles) addAndMakeVisible(h);
+    addAndMakeVisible(envEditor);
 
     addAndMakeVisible(threshold);   // added last → painted on top
 }
@@ -384,14 +506,13 @@ void WindowPanel::resized()
 {
     auto b = getLocalBounds();
     const int halfH = b.getHeight() / 2;
-    const int colW  = b.getWidth() / 4;
 
     // Top handles spread across the full width (count varies with the engine).
     const int topColW = b.getWidth() / juce::jmax(1, topHandles.size());
     for (int i = 0; i < topHandles.size(); ++i)
         topHandles[i]->setBounds(i * topColW, 0, topColW, halfH);
-    for (int i = 0; i < envHandles.size(); ++i)
-        envHandles[i]->setBounds(i * colW, halfH, colW, b.getHeight() - halfH);
+
+    envEditor.setBounds(0, halfH, b.getWidth(), b.getHeight() - halfH);
 
     threshold.setBounds(b);
 }
@@ -425,49 +546,8 @@ void WindowPanel::paint(juce::Graphics& g)
     g.setColour(juce::Colour(0xff2a2d31).withAlpha(0.85f));
     g.fillPath(wave);
 
-    // ADSR envelope curve in the bottom half, mirroring the modgui:
-    // A/D/R share the timeline proportionally, the sustain hold is a
-    // fixed 18% slice so it stays visible at any setting.
-    auto raw = [&](const char* id) { return apvts.getRawParameterValue(id)->load(); };
-    const float A = raw("env_attack"), D = raw("env_decay");
-    const float S = raw("env_sustain"), R = raw("env_release");
-    const float adr = juce::jmax(1.0f, A + D + R);
-    auto yOf = [&](float lvl) { return b.getHeight() - lvl * (b.getHeight() * 0.5f); };
-    const float w = b.getWidth();
-    const float holdW = w * 0.18f;
-    const float dynW  = w - holdW;
-    const float xA = A / adr * dynW;
-    const float xD = xA + D / adr * dynW;
-    const float xH = xD + holdW;
-    const float xR = xH + R / adr * dynW;
-
-    juce::Path env;
-    env.startNewSubPath(0.0f, yOf(0.0f));
-    env.lineTo(xA, yOf(1.0f));
-    env.lineTo(xD, yOf(S));
-    env.lineTo(xH, yOf(S));
-    env.lineTo(xR, yOf(0.0f));
-    g.setColour(megalo::kWhite.withAlpha(0.85f));
-    g.strokePath(env, juce::PathStrokeType(1.5f));
-
-    juce::Path fill = env;
-    fill.lineTo(xR, b.getHeight());
-    fill.lineTo(0.0f, b.getHeight());
-    fill.closeSubPath();
-    g.setColour(megalo::kWhite.withAlpha(0.14f));
-    g.fillPath(fill);
-
-    // A/D/S/R handle dots ride on their breakpoints of the curve
-    // (S sits in the middle of the sustain hold, R at the curve end).
-    const juce::Point<float> dots[4] = {
-        { xA,                yOf(1.0f) },
-        { xD,                yOf(S)    },
-        { (xD + xH) * 0.5f,  yOf(S)    },
-        { xR,                yOf(0.0f) }
-    };
-    g.setColour(juce::Colour(0xffffd9a8));
-    for (auto& pt : dots)
-        g.fillEllipse(pt.x - 6.0f, pt.y - 6.0f, 12.0f, 12.0f);
+    // (The ADSR curve and its breakpoints live in envEditor, a child
+    //  component covering the bottom half.)
 
     // White midline.
     g.setColour(megalo::kWhite.withAlpha(0.85f));
@@ -507,12 +587,13 @@ MegaloEditor::MegaloEditor(MegaloAudioProcessor& p)
     addKnob("filter_q",     "Q");       // 8
     addKnob("base_pitch",   "BASE");    // 9  GLOBAL
     addKnob("blend",        "BLEND");   // 10
+    addKnob("dry_level",    "DRY");     // 11 (was only reachable via the host)
 #ifdef MEGALO_HN_SYNTH
-    addKnob("hn_brightness","BRIGHT");  // 11 TIMBRE (MegaloHN only)
-    addKnob("hn_damping",   "DAMP");    // 12
-    addKnob("hn_even_odd",  "EVEN");    // 13
-    addKnob("hn_noise",     "NOISE");   // 14
-    addKnob("hn_width",     "WIDTH");   // 15
+    addKnob("hn_brightness","BRIGHT");  // 12 TIMBRE (MegaloHN only)
+    addKnob("hn_damping",   "DAMP");    // 13
+    addKnob("hn_even_odd",  "EVEN");    // 14
+    addKnob("hn_noise",     "NOISE");   // 15
+    addKnob("hn_width",     "WIDTH");   // 16
 #endif
 
     leds.add(new LedToggle(proc.apvts, "pitch1_enable"));
@@ -585,11 +666,11 @@ void MegaloEditor::paint(juce::Graphics& g)
         g.drawText(labels[i], juce::Rectangle<int>((int) fx - 30, rulerY - 11, 60, 11), just, false);
     }
 
-    // Group backgrounds + titles.
+    // Group backgrounds + titles (GLOBAL widened for the DRY knob).
     struct GroupSpec { const char* title; int x, w; };
     const GroupSpec groups[5] = {
-        { "VOICE 1", 26,  110 }, { "VOICE 2", 144, 110 }, { "DETUNE", 262, 140 },
-        { "FILTER", 410, 166 }, { "GLOBAL", 584, 110 }
+        { "VOICE 1", 26,  104 }, { "VOICE 2", 138, 104 }, { "DETUNE", 250, 134 },
+        { "FILTER", 392, 158 }, { "GLOBAL", 558, 136 }
     };
     for (auto& gr : groups) {
         juce::Rectangle<int> r(gr.x, 245, gr.w, 113);
@@ -622,8 +703,8 @@ void MegaloEditor::resized()
     window.setBounds(26, 60, 668, 170);
 
     // LEDs sit at the top-right of VOICE 1 / VOICE 2 / DETUNE heads.
-    const int ledGroupX[3] = { 26, 144, 262 };
-    const int ledGroupW[3] = { 110, 110, 140 };
+    const int ledGroupX[3] = { 26, 138, 250 };
+    const int ledGroupW[3] = { 104, 104, 134 };
     for (int i = 0; i < leds.size(); ++i)
         leds[i]->setBounds(ledGroupX[i] + ledGroupW[i] - 18, 251, 10, 10);
 
@@ -640,20 +721,20 @@ void MegaloEditor::resized()
         }
     };
 
-    layoutRow(26,  110, { 0, 1 }, 0);          // VOICE 1
-    layoutRow(144, 110, { 2, 3 }, 0);          // VOICE 2
-    layoutRow(262, 140, { 4, 5, 6 }, 0);       // DETUNE
+    layoutRow(26,  104, { 0, 1 }, 0);          // VOICE 1
+    layoutRow(138, 104, { 2, 3 }, 0);          // VOICE 2
+    layoutRow(250, 134, { 4, 5, 6 }, 0);       // DETUNE
 
     // FILTER: 3-pos switch on the left, then CUTOFF + Q.
-    const int swW = 66, swH = 22;
+    const int swW = 60, swH = 22;
     const int filtContentW = swW + gap + 2 * knobW + gap;
-    int fx = 410 + (166 - filtContentW) / 2;
+    int fx = 392 + (158 - filtContentW) / 2;
     filterType.setBounds(fx, bodyY + (knobH - swH) / 2 - 6, swW, swH);
     fx += swW + gap;
     knobs[7]->setBounds(fx, bodyY, knobW, knobH); fx += knobW + gap;
     knobs[8]->setBounds(fx, bodyY, knobW, knobH);
 
-    layoutRow(584, 110, { 9, 10 }, 0);         // GLOBAL
+    layoutRow(558, 136, { 9, 10, 11 }, 0);     // GLOBAL (BASE / BLEND / DRY)
 
 #ifdef MEGALO_HN_SYNTH
     // TIMBRE — five knobs spread across the full-width second row.
@@ -661,7 +742,7 @@ void MegaloEditor::resized()
         const int tBodyY = 368 + 26;
         const int n = 5, rowW = n * knobW + (n - 1) * gap;
         int x = 26 + (668 - rowW) / 2;
-        for (int i = 11; i <= 15; ++i) {
+        for (int i = 12; i <= 16; ++i) {
             knobs[i]->setBounds(x, tBodyY, knobW, knobH);
             x += knobW + gap;
         }

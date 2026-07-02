@@ -433,3 +433,50 @@ Les items 2, 3, 5, 6, 7 et 10 sont indépendants et chacun testable avec le
 workflow du §1.2 ; c'est l'ordre d'attaque recommandé côté son. Côté UI,
 l'item 1 se fait en deux passes (JUCE d'abord — plus simple à itérer — puis
 portage modgui pour garder la parité visuelle).
+
+---
+
+## 5. Mise en œuvre (2026-07-02, même branche)
+
+Implémentés dans cette passe :
+
+- **#1 ADSR** — JUCE : nouvel `EnvelopeEditor` (points A/D/R déplacés
+  horizontalement sur la courbe, S verticalement, saisie au point le plus
+  proche, axe temps fixe par segments avec skew log
+  `setSkewForCentre(250/1000 ms)`, hit-test de la `ThresholdLine` restreint).
+  modgui (2 bundles) : drag délégué au conteneur avec choix du point le plus
+  proche, A/D/R horizontaux, échelle log (`data-scale="log"`), courbe à axe
+  fixe. Défaut `env_sustain` 1.0 → 0.8 partout (Decay audible d'emblée).
+  Vérifié : 0–300 ms occupe désormais 67 % de la course (6 % avant).
+- **#2 Raccord de boucle** — score normalisé par l'énergie + fenêtre 10 ms
+  (`SEAM_CMP_MS`), pas de recherche adapté pour garder le coût borné.
+- **#3 Pompage granulaire** — normalisation par la somme réelle des
+  enveloppes (×0,75 pour conserver le niveau). Mesuré : le niveau du pad ne
+  dépend plus des réglages grain/xfade (avant : ±3 dB selon réglages).
+  Note : l'ondulation stochastique résiduelle mesurée sur sinus pur vient des
+  annulations de phase entre grains (voir « pistes restantes »).
+- **#5 Inharmonicité HN** — `harm_freq[]` mesuré par partiel (parabolique,
+  snap ±3 bins, clamp ±3 %) et utilisé par `AdditiveSynth`. Vérifié sur corde
+  synthétique raide (B = 4e-4) : partiels suivis à ±1,3 cents (l'idéal k·f0
+  était faux de 15 cents au partiel 7). Détection multi-F0 inchangée (18/20).
+- **#6 Écrêtage** — clip à genou (linéaire < −3 dBFS, tanh au-delà, borné ±1)
+  dans les deux cœurs ; le dry repasse propre à niveau normal.
+- **#7 Interpolation** — Catmull-Rom 4 points dans `GrainPlayer::_read`.
+- **#8 UI JUCE** — poignées SIZE/XFADE restaurées, knob DRY dans GLOBAL,
+  bulle de valeur au drag + suffixe d'unité + double-clic reset sur tous les
+  knobs.
+- **#10 Gate d'onset** — plancher absolu ~−55 dBFS (`ONSET_ABS_GATE`).
+
+Validation : LV2 megalo + megaloHN compilent ; `hn_env_test` (ADSR),
+`hn_test` (18/20 inchangé), test d'inharmonicité et test de pompage ajoutés
+en scratch ; scripts modgui vérifiés par `node --check`. La compilation JUCE
+n'est pas possible dans cet environnement (accès GitHub restreint au dépôt →
+FetchContent JUCE bloqué) ; elle est couverte par la CI GitHub Actions
+(macOS + Windows) au push.
+
+Pistes restantes (inchangées) : #4 worker thread pour l'analyse HN, #9
+SVF/lissage filtre + BP gain constant, #11 phase locking PV / phases mesurées
+HN / bruit HN stéréo-enveloppé, #12 cible `make audit` en CI — plus la
+nouvelle observation : annulations de phase entre grains sur matériau très
+tonal (respawn aligné en phase à étudier, mesuré jusqu'à ~25 dB de creux sur
+sinus pur, bien moindre sur matériau réel).

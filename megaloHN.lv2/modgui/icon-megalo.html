@@ -103,10 +103,13 @@
 
         </div>
 
-        <!-- ── Bottom handles: envelope ADSR (vertical drag) ───────────
-             The envelope SVG is drawn underneath the handle columns;
-             its breakpoints follow the current A/D/S/R values in
-             real time (see updateEnvelope() in script-megalo.js). -->
+        <!-- ── Bottom handles: envelope ADSR ───────────────────────
+             The breakpoints are dragged directly ON the curve: A/D/R
+             horizontally (they are times, on a fixed log axis), S
+             vertically. The drag is delegated to this container with
+             nearest-point picking (see script-megalo.js); the handle
+             divs below only carry the labels, readouts and the MOD
+             addressing hit zones. -->
         <div class="megalo-handles megalo-handles-bottom">
 
             <svg class="megalo-envelope" viewBox="0 0 1000 100" preserveAspectRatio="none">
@@ -115,7 +118,7 @@
             </svg>
 
             <div class="megalo-handle megalo-handle-env" data-handle="env_attack"
-                 data-axis="y-up" data-min="0" data-max="5000" title="Attack">
+                 data-scale="log" data-min="0" data-max="5000" title="Attack">
                 <div class="megalo-handle-track"></div>
                 <div class="megalo-handle-knob"></div>
                 <span class="megalo-handle-label">A</span>
@@ -127,7 +130,7 @@
             </div>
 
             <div class="megalo-handle megalo-handle-env" data-handle="env_decay"
-                 data-axis="y-up" data-min="0" data-max="5000" title="Decay">
+                 data-scale="log" data-min="0" data-max="5000" title="Decay">
                 <div class="megalo-handle-track"></div>
                 <div class="megalo-handle-knob"></div>
                 <span class="megalo-handle-label">D</span>
@@ -139,7 +142,7 @@
             </div>
 
             <div class="megalo-handle megalo-handle-env" data-handle="env_sustain"
-                 data-axis="y-up" data-min="0" data-max="1" title="Sustain">
+                 data-min="0" data-max="1" title="Sustain">
                 <div class="megalo-handle-track"></div>
                 <div class="megalo-handle-knob"></div>
                 <span class="megalo-handle-label">S</span>
@@ -151,7 +154,7 @@
             </div>
 
             <div class="megalo-handle megalo-handle-env" data-handle="env_release"
-                 data-axis="y-up" data-min="0" data-max="10000" title="Release">
+                 data-scale="log" data-min="0" data-max="10000" title="Release">
                 <div class="megalo-handle-track"></div>
                 <div class="megalo-handle-knob"></div>
                 <span class="megalo-handle-label">R</span>
