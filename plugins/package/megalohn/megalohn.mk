@@ -15,7 +15,7 @@
 # then trigger a mod-plugin-builder rebuild.
 ################################################################################
 
-MEGALOHN_VERSION = 4691fea0b4677d930de2eece5be98ddfe8dff2e4
+MEGALOHN_VERSION = 7130bb4654a3d097edfd620d2ac09332f1d12415
 MEGALOHN_SITE    = $(call github,pilali,megalo,$(MEGALOHN_VERSION))
 MEGALOHN_BUNDLES = megaloHN.lv2
 
