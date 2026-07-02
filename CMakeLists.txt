@@ -91,6 +91,9 @@ if(MEGALO_BUILD_HN)
     megalo_configure_target(megaloHN "megaloHN" "megaloHN.lv2")
     target_compile_definitions(megaloHN PRIVATE
         MEGALO_HN_SYNTH MEGALO_HN_QUALITY=${MEGALO_HN_QUALITY})
+    # The H+N analysis runs on a std::thread worker.
+    find_package(Threads REQUIRED)
+    target_link_libraries(megaloHN PRIVATE Threads::Threads)
     message(STATUS "MegaloHN (H+N additive, tier ${MEGALO_HN_QUALITY}) enabled")
     if(MEGALO_RAVE)
         target_compile_definitions(megaloHN PRIVATE MEGALO_RAVE)

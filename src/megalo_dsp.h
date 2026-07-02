@@ -76,6 +76,13 @@ void       megalo_dsp_process_stereo(MegaloDsp*, const MegaloParams*,
    the post-onset hold window is active, 0.0f otherwise. */
 float      megalo_dsp_trigger(const MegaloDsp*);
 
+/* Offline/test helper — NOT for the audio thread. The MegaloHN analysis runs
+   on a worker thread in wall-clock time; offline renders (faster than
+   real-time) would otherwise see it land hundreds of audio-milliseconds
+   late. Blocks until any posted analysis job has finished, so the next
+   process() call consumes it deterministically. No-op in the granular build. */
+void       megalo_dsp_flush_analysis(MegaloDsp*);
+
 #ifdef __cplusplus
 }
 #endif

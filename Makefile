@@ -116,10 +116,40 @@ $(STD_BINARY): $(STD_SOURCES) $(HEADERS)
 	$(CXX) $(CXXFLAGS) $(EXTRA_DEFS) $(LV2FLAGS) -fPIC -shared -o $@ $(STD_SOURCES) $(LDFLAGS)
 
 $(HN_BINARY): $(HN_SOURCES) $(HEADERS)
-	$(CXX) $(CXXFLAGS) $(EXTRA_DEFS) $(HN_DEFS) $(LV2FLAGS) -fPIC -shared -o $@ $(HN_SOURCES) $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) $(EXTRA_DEFS) $(HN_DEFS) $(LV2FLAGS) -fPIC -shared -pthread -o $@ $(HN_SOURCES) $(LDFLAGS)
 
 clean:
 	rm -f $(STD_BINARY) $(HN_BINARY)
+	rm -rf build/audit
+
+# ── Audit: objective sound-quality regression suite ─────────────────────────
+# Builds the offline harnesses in tools/ against the real DSP cores and runs
+# them. Each binary prints its measurements and exits non-zero on regression:
+#   hn_test      — multi-F0 detection (tones, chords, octaves; >= 17/20)
+#   hn_env_test  — ADSR behaviour of the resynthesized pad (informational)
+#   click_*      — dry→wet hand-over clicks, both cores (steps <= 3x input)
+#   grain_test   — granular pad pumping (ripple <= 8 dB on a frozen sine)
+#   release_test — MegaloHN release bank (old chord decays, new one rises)
+AUDIT_DIR   = build/audit
+AUDIT_FLAGS = -O2 -std=c++17 -Isrc
+
+audit: $(HEADERS)
+	@mkdir -p $(AUDIT_DIR)
+	$(CXX) $(AUDIT_FLAGS) tools/hn_test.cpp -o $(AUDIT_DIR)/hn_test
+	$(CXX) $(AUDIT_FLAGS) -DMEGALO_HN_SYNTH -pthread tools/hn_env_test.cpp src/megaloHN_dsp.cpp -o $(AUDIT_DIR)/hn_env_test
+	$(CXX) $(AUDIT_FLAGS) tools/click_test.cpp src/megalo_dsp.cpp -o $(AUDIT_DIR)/click_megalo
+	$(CXX) $(AUDIT_FLAGS) -DMEGALO_HN_SYNTH -pthread tools/click_test.cpp src/megaloHN_dsp.cpp -o $(AUDIT_DIR)/click_megaloHN
+	$(CXX) $(AUDIT_FLAGS) tools/grain_test.cpp src/megalo_dsp.cpp -o $(AUDIT_DIR)/grain_test
+	$(CXX) $(AUDIT_FLAGS) -DMEGALO_HN_SYNTH -pthread tools/release_test.cpp src/megaloHN_dsp.cpp -o $(AUDIT_DIR)/release_test
+	@echo "══ multi-F0 detection ══";   $(AUDIT_DIR)/hn_test | tail -3
+	@echo "══ ADSR (informational) ══"; $(AUDIT_DIR)/hn_env_test
+	@echo "══ clicks: Megalo ══";       $(AUDIT_DIR)/click_megalo
+	@echo "══ clicks: MegaloHN ══";     $(AUDIT_DIR)/click_megaloHN
+	@echo "══ grain pumping ══";        $(AUDIT_DIR)/grain_test
+	@echo "══ HN release bank ══";      $(AUDIT_DIR)/release_test
+	@echo "AUDIT OK"
+
+.PHONY: audit
 
 # Recursive copy installs everything inside each bundle: the .so binary,
 # the manifest + plugin TTLs, the preset TTLs (Clean Sustain / Shimmer …),

@@ -103,6 +103,10 @@ struct MegaloDsp {
     float cached_cutoff = -1.0f;
     float cached_q      = -1.0f;
     int   cached_stereo = -1;   // filter setup depends on mono vs stereo cutoff
+    // Smoothed filter parameters (see the setup block): knob sweeps glide
+    // toward the target instead of stepping per control change.
+    float smooth_cutoff = -1.0f;   // < 0 → snap to target on the next block
+    float smooth_q      = 0.7f;
 
     // Onset pulse output (held high for a short window after each detected
     // onset so the GUI poll catches the transition reliably).
@@ -181,6 +185,8 @@ void megalo_dsp_reset(MegaloDsp* p)
     p->lfo_phase = 0.0;
     p->cached_ftype = p->cached_cutoff = p->cached_q = -1.0f;
     p->cached_stereo = -1;
+    p->smooth_cutoff = -1.0f;
+    p->smooth_q      = 0.7f;
     p->trigger_hold = 0;
     p->trigger_value = 0.0f;
     p->comp_level  = 0.0f;
@@ -238,25 +244,42 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
 #endif
 
     // ── Filter ────────────────────────────────────────────────────────────
-    // Mono: exact cutoff (bit-identical to before). Stereo: spread the L/R
-    // cutoffs by ±CUTOFF_STEREO_SPREAD for a subtle tonal decorrelation.
-    if (filt_type != p->cached_ftype || filt_cutoff != p->cached_cutoff ||
-        filt_q != p->cached_q || (int)stereo != p->cached_stereo) {
+    // Cutoff/Q are smoothed toward their targets (~30 ms time constant) so a
+    // knob sweep or automation glides instead of stepping per control change
+    // (the raw per-block jumps were audible as zipper/clicks at high Q).
+    // Filter TYPE changes stay instantaneous — a topology jump is a
+    // discontinuity whatever we do. Stereo: the L/R cutoffs are spread by
+    // ±CUTOFF_STEREO_SPREAD for a subtle tonal decorrelation.
+    if (p->smooth_cutoff <= 0.0f) {
+        p->smooth_cutoff = filt_cutoff;              // first block: snap
+        p->smooth_q      = filt_q;
+    } else {
+        const float aa = 1.0f - std::exp(-(float)n_samples / (0.030f * sr));
+        p->smooth_cutoff += aa * (filt_cutoff - p->smooth_cutoff);
+        p->smooth_q      += aa * (filt_q      - p->smooth_q);
+        // Snap when close so the settled filter stops recomputing.
+        if (std::abs(p->smooth_cutoff - filt_cutoff) < 0.001f * filt_cutoff)
+            p->smooth_cutoff = filt_cutoff;
+        if (std::abs(p->smooth_q - filt_q) < 0.001f * filt_q)
+            p->smooth_q = filt_q;
+    }
+    if (filt_type != p->cached_ftype || p->smooth_cutoff != p->cached_cutoff ||
+        p->smooth_q != p->cached_q || (int)stereo != p->cached_stereo) {
         Biquad::Type btype = (filt_type < 0.5f) ? Biquad::LP
                            : (filt_type < 1.5f) ? Biquad::HP
                            :                      Biquad::BP;
         const float nyq = sr * 0.499f;
         const float cut_l = stereo
-            ? std::clamp(filt_cutoff * (1.0f - CUTOFF_STEREO_SPREAD), 20.0f, nyq)
-            : filt_cutoff;
-        p->filter.setup(btype, cut_l, filt_q, sr);
+            ? std::clamp(p->smooth_cutoff * (1.0f - CUTOFF_STEREO_SPREAD), 20.0f, nyq)
+            : p->smooth_cutoff;
+        p->filter.setup(btype, cut_l, p->smooth_q, sr);
         if (stereo) {
-            const float cut_r = std::clamp(filt_cutoff * (1.0f + CUTOFF_STEREO_SPREAD), 20.0f, nyq);
-            p->filter_r.setup(btype, cut_r, filt_q, sr);
+            const float cut_r = std::clamp(p->smooth_cutoff * (1.0f + CUTOFF_STEREO_SPREAD), 20.0f, nyq);
+            p->filter_r.setup(btype, cut_r, p->smooth_q, sr);
         }
         p->cached_ftype  = filt_type;
-        p->cached_cutoff = filt_cutoff;
-        p->cached_q      = filt_q;
+        p->cached_cutoff = p->smooth_cutoff;
+        p->cached_q      = p->smooth_q;
         p->cached_stereo = (int)stereo;
     }
 
@@ -475,4 +498,9 @@ void megalo_dsp_process_stereo(MegaloDsp* p, const MegaloParams* p_,
 float megalo_dsp_trigger(const MegaloDsp* p)
 {
     return p->trigger_value;
+}
+
+void megalo_dsp_flush_analysis(MegaloDsp*)
+{
+    /* Granular build: analysis is synchronous (there is none) — no-op. */
 }

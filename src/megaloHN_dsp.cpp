@@ -37,6 +37,10 @@
 #ifdef MEGALO_RAVE
 #include "rave_engine.hpp"
 #endif
+#include <atomic>
+#include <chrono>
+#include <cstring>
+#include <thread>
 #endif
 
 // Internal constants (not exposed as parameters)
@@ -56,21 +60,19 @@ static constexpr int XFADE_UP_MS     = 15;
 //      at blend 1 → frozen only, with constant perceived loudness across the
 //      sweep (sin/cos law) instead of the old −6 dB dip at the centre.
 //
-//   2. onset crossfade — at every new freeze the output is held on the live
-//      dry signal and then fades to the steady blend over the ENVELOPE ATTACK
-//      time (env_attack), so the dry recedes exactly as the frozen pad attacks
-//      in. This both masks the capture latency ("no audio hole") and gives a
-//      natural dry→wet transition. xfade ∈ [0,1] is 1 right after onset (cover
-//      with dry) and decays to 0 (steady blend) once the new pad is ready
-//      (LoopReady for granular Megalo; after the deferred analysis for
-//      MegaloHN). Per sample:
-//        dry_g = (dry_g0 + (1 − dry_g0)·xfade) · dry_level
-//        wet_g =  wet_g0 · (1 − xfade)
-//        out   = soft_clip(x·dry_g + freeze_sig·wet_g)
-//      xfade gates BOTH channels: dry is boosted toward full AND wet is pulled
-//      to zero while xfade = 1.  This means envelope.reset() at LoopReady is
-//      inaudible (wet was already 0), and the trigger-time crossfade is a clean
-//      simultaneous dry-fade-out / wet-fade-in over env_attack milliseconds.
+//   2. onset crossfade — at every new freeze the DRY is boosted toward full
+//      (ramped over XFADE_UP_MS, anti-click) and recedes to the steady blend
+//      over the ENVELOPE ATTACK time once the new pad is ready, so the live
+//      note covers the capture latency ("no audio hole"). Per sample:
+//        dry_g     = (dry_g0 + (1 − dry_g0)·xfade) · dry_level
+//        gran_gate = 1 − xfade          (granular fallback only)
+//        out       = soft_clip(x·dry_g + filter(wet_mix)·wet_g0)
+//      The additive chords are NEVER gated by xfade: the outgoing chord is
+//      copied to the release bank at LoopReady (with its releasing envelope)
+//      and keeps sounding until its release ends, while the new chord attacks
+//      from zero — a proper chord crossfade. Only the granular FALLBACK is
+//      muted over the gap (its loop buffer is overwritten in place by the
+//      capture, so it cannot survive the swap).
 
 // Stereo width: left/right filter cutoffs are spread by ±this fraction, and
 // the right detune LFO runs anti-phase to the left. Subtle enough to stay
@@ -113,6 +115,10 @@ struct MegaloDsp {
     float cached_cutoff = -1.0f;
     float cached_q      = -1.0f;
     int   cached_stereo = -1;   // filter setup depends on mono vs stereo cutoff
+    // Smoothed filter parameters (see the setup block): knob sweeps glide
+    // toward the target instead of stepping per control change.
+    float smooth_cutoff = -1.0f;   // < 0 → snap to target on the next block
+    float smooth_q      = 0.7f;
 
     // Onset pulse output (held high for a short window after each detected
     // onset so the GUI poll catches the transition reliably).
@@ -137,6 +143,17 @@ struct MegaloDsp {
     PolyAdditiveSynth hn_vd;   // detuned copy of the base chord (chorus voice)
     PolyAdditiveSynth hn_v1;   // pitch voice 1
     PolyAdditiveSynth hn_v2;   // pitch voice 2
+    // Release bank: at LoopReady the outgoing chord (bank states, phases and
+    // all) is copied here together with its envelope, so its RELEASE keeps
+    // sounding on its own while the new chord attacks — a proper chord
+    // crossfade instead of the old 15 ms wet mute at every onset (which
+    // truncated the previous pad audibly). Single slot: a faster retrigger
+    // steals it, like a synth voice.
+    PolyAdditiveSynth hn_p0;
+    PolyAdditiveSynth hn_pd;
+    PolyAdditiveSynth hn_p1;
+    PolyAdditiveSynth hn_p2;
+    Envelope          env_prev;
     bool hn_needs_analysis = false;
     // MegaloHN anti-click: the additive voices only exist after the deferred
     // analysis runs (the block following LoopReady). We therefore hold the
@@ -148,6 +165,25 @@ struct MegaloDsp {
     // Cached timbre controls so set_timbre() (pow/exp per partial) only re-runs
     // when a knob actually moves. Sentinel forces the first update.
     float hn_t_bright = 1e9f, hn_t_damp = 1e9f, hn_t_eo = 1e9f, hn_t_noise = 1e9f;
+    // ── Analysis worker ────────────────────────────────────────────────────
+    // hn_multif0_analyze (FFT 16384 + NNLS, a few ms) used to run inline at
+    // the block boundary following LoopReady — well past the RT budget of a
+    // 128-sample block on the Dwarf/Pi, i.e. a dropout risk at every capture.
+    // It now runs on this worker thread: the RT side memcpys the fresh loop
+    // into hn_job_loop and flips hn_job_state 0→1 (both RT-safe); the worker
+    // analyzes and flips 1→2; the RT side consumes the result (2→0) at a
+    // block boundary and only then triggers the new chord's attack. The
+    // hand-over machinery (dry boost + release bank) already tolerates the
+    // extra couple of blocks of latency.
+    std::thread       hn_worker;
+    std::atomic<bool> hn_quit{false};
+    std::atomic<int>  hn_job_state{0};   // 0 idle, 1 posted, 2 result ready
+    uint32_t          hn_job_gen = 0;    // generation tag of the posted job
+    uint32_t          hn_gen     = 0;    // bumped by reset() → stale results dropped
+    int               hn_job_len = 0;
+    float             hn_job_sr  = 48000.0f;
+    float             hn_job_loop[FREEZE_MAX_SAMPLES] = {};
+    MultiHNState      hn_job_result;
 #ifdef MEGALO_RAVE
     RaveEngine rave;
 #endif
@@ -171,6 +207,27 @@ static inline float soft_clip(float x) noexcept {
     return (x < 0.0f) ? -y : y;
 }
 
+#ifdef MEGALO_HN_SYNTH
+// Analysis worker main loop: poll for a posted job (500 µs granularity — the
+// hand-over tolerates milliseconds), run the multi-F0 analysis off the audio
+// thread, publish the result. The thread-local scratch buffers inside
+// hn_multif0_analyze live on this thread only.
+static void hn_worker_main(MegaloDsp* p)
+{
+    for (;;) {
+        if (p->hn_quit.load(std::memory_order_acquire)) return;
+        if (p->hn_job_state.load(std::memory_order_acquire) == 1) {
+            p->hn_job_result = hn_multif0_analyze(p->hn_job_loop,
+                                                  p->hn_job_len,
+                                                  p->hn_job_sr);
+            p->hn_job_state.store(2, std::memory_order_release);
+        } else {
+            std::this_thread::sleep_for(std::chrono::microseconds(500));
+        }
+    }
+}
+#endif
+
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 // = the former instantiate()
 MegaloDsp* megalo_dsp_new(double sample_rate)
@@ -189,12 +246,20 @@ MegaloDsp* megalo_dsp_new(double sample_rate)
     p->pv1.init(sample_rate);
     p->pv2.init(sample_rate);
 #endif
+#ifdef MEGALO_HN_SYNTH
+    p->hn_worker = std::thread(hn_worker_main, p);
+#endif
     return p;
 }
 
 // = the former cleanup()
 void megalo_dsp_free(MegaloDsp* p)
 {
+    if (!p) return;
+#ifdef MEGALO_HN_SYNTH
+    p->hn_quit.store(true, std::memory_order_release);
+    if (p->hn_worker.joinable()) p->hn_worker.join();
+#endif
     delete p;
 }
 
@@ -221,6 +286,8 @@ void megalo_dsp_reset(MegaloDsp* p)
     p->lfo_phase = 0.0;
     p->cached_ftype = p->cached_cutoff = p->cached_q = -1.0f;
     p->cached_stereo = -1;
+    p->smooth_cutoff = -1.0f;
+    p->smooth_q      = 0.7f;
     p->trigger_hold = 0;
     p->trigger_value = 0.0f;
     p->xfade     = 0.0f;
@@ -230,6 +297,7 @@ void megalo_dsp_reset(MegaloDsp* p)
     p->hn_state          = MultiHNState{};
     p->hn_needs_analysis = false;
     p->hn_trigger_pending = false;
+    p->hn_gen++;          // invalidate any analysis still in flight
     p->hn_t_bright = p->hn_t_damp = p->hn_t_eo = p->hn_t_noise = 1e9f;
     // Clear the additive voices too (idle = no active notes) so a reset can
     // never leave a stale chord behind. Analysis re-seeds them on the next loop.
@@ -239,6 +307,11 @@ void megalo_dsp_reset(MegaloDsp* p)
     p->hn_vd.reset(hn_empty, hn_sr);
     p->hn_v1.reset(hn_empty, hn_sr);
     p->hn_v2.reset(hn_empty, hn_sr);
+    p->hn_p0.reset(hn_empty, hn_sr);
+    p->hn_pd.reset(hn_empty, hn_sr);
+    p->hn_p1.reset(hn_empty, hn_sr);
+    p->hn_p2.reset(hn_empty, hn_sr);
+    p->env_prev.reset();
 #endif
 }
 
@@ -295,29 +368,57 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
 #endif
 
     // ── Filter ────────────────────────────────────────────────────────────
-    // Mono: exact cutoff (bit-identical to before). Stereo: spread the L/R
-    // cutoffs by ±CUTOFF_STEREO_SPREAD for a subtle tonal decorrelation.
-    if (filt_type != p->cached_ftype || filt_cutoff != p->cached_cutoff ||
-        filt_q != p->cached_q || (int)stereo != p->cached_stereo) {
+    // Cutoff/Q are smoothed toward their targets (~30 ms time constant) so a
+    // knob sweep or automation glides instead of stepping per control change
+    // (the raw per-block jumps were audible as zipper/clicks at high Q).
+    // Filter TYPE changes stay instantaneous — a topology jump is a
+    // discontinuity whatever we do. Stereo: the L/R cutoffs are spread by
+    // ±CUTOFF_STEREO_SPREAD for a subtle tonal decorrelation.
+    if (p->smooth_cutoff <= 0.0f) {
+        p->smooth_cutoff = filt_cutoff;              // first block: snap
+        p->smooth_q      = filt_q;
+    } else {
+        const float aa = 1.0f - std::exp(-(float)n_samples / (0.030f * sr));
+        p->smooth_cutoff += aa * (filt_cutoff - p->smooth_cutoff);
+        p->smooth_q      += aa * (filt_q      - p->smooth_q);
+        // Snap when close so the settled filter stops recomputing.
+        if (std::abs(p->smooth_cutoff - filt_cutoff) < 0.001f * filt_cutoff)
+            p->smooth_cutoff = filt_cutoff;
+        if (std::abs(p->smooth_q - filt_q) < 0.001f * filt_q)
+            p->smooth_q = filt_q;
+    }
+    if (filt_type != p->cached_ftype || p->smooth_cutoff != p->cached_cutoff ||
+        p->smooth_q != p->cached_q || (int)stereo != p->cached_stereo) {
         Biquad::Type btype = (filt_type < 0.5f) ? Biquad::LP
                            : (filt_type < 1.5f) ? Biquad::HP
                            :                      Biquad::BP;
         const float nyq = sr * 0.499f;
         const float cut_l = stereo
-            ? std::clamp(filt_cutoff * (1.0f - CUTOFF_STEREO_SPREAD), 20.0f, nyq)
-            : filt_cutoff;
-        p->filter.setup(btype, cut_l, filt_q, sr);
+            ? std::clamp(p->smooth_cutoff * (1.0f - CUTOFF_STEREO_SPREAD), 20.0f, nyq)
+            : p->smooth_cutoff;
+        p->filter.setup(btype, cut_l, p->smooth_q, sr);
         if (stereo) {
-            const float cut_r = std::clamp(filt_cutoff * (1.0f + CUTOFF_STEREO_SPREAD), 20.0f, nyq);
-            p->filter_r.setup(btype, cut_r, filt_q, sr);
+            const float cut_r = std::clamp(p->smooth_cutoff * (1.0f + CUTOFF_STEREO_SPREAD), 20.0f, nyq);
+            p->filter_r.setup(btype, cut_r, p->smooth_q, sr);
         }
         p->cached_ftype  = filt_type;
-        p->cached_cutoff = filt_cutoff;
-        p->cached_q      = filt_q;
+        p->cached_cutoff = p->smooth_cutoff;
+        p->cached_q      = p->smooth_q;
         p->cached_stereo = (int)stereo;
     }
 
     p->envelope.set(env_atk, env_dcy, env_sus, env_rel, sr);
+#ifdef MEGALO_HN_SYNTH
+    p->env_prev.set(env_atk, env_dcy, env_sus, env_rel, sr);
+    // The release bank tracks the BASE transposition only (no chorus wobble
+    // on a dying tail) so a live base-pitch move still carries the tail.
+    if (p->env_prev.is_active()) {
+        p->hn_p0.set_pitch_ratio(base_speed);
+        p->hn_pd.set_pitch_ratio(base_speed);
+        p->hn_p1.set_pitch_ratio(static_cast<float>(semi_to_ratio(p_->pitch1_semi)));
+        p->hn_p2.set_pitch_ratio(static_cast<float>(semi_to_ratio(p_->pitch2_semi)));
+    }
+#endif
 
     // The onset dry→wet crossfade tracks the envelope ATTACK: the live dry
     // fades back to the steady blend over the same time the frozen pad takes to
@@ -358,34 +459,52 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
     const float hn_noise  = std::clamp(p_->hn_noise,       0.0f, 1.0f);
     const float hn_width  = std::clamp(p_->hn_width,       0.0f, 1.0f);
 
-    // ── H+N analysis (deferred from LoopReady to this block boundary) ──────
-    // hn_multif0_analyze() is not RT-safe (FFT + NNLS, a few ms); running it
-    // here, once per capture, keeps the per-sample loop clean.
-    if (p->hn_needs_analysis) {
+    // ── H+N analysis (asynchronous, see hn_worker_main) ───────────────────
+    // Post the freshly captured loop to the worker: memcpy + one atomic flip,
+    // both RT-safe. If the worker is somehow still busy with an earlier job
+    // (analysis ≪ capture interval, so this is theoretical), retry at the
+    // next block boundary.
+    if (p->hn_needs_analysis &&
+        p->hn_job_state.load(std::memory_order_acquire) == 0) {
         const float* la = p->freeze.loop_data();
         const int    ll = p->freeze.loop_len();
         if (ll > 0) {
-            p->hn_state = hn_multif0_analyze(la, ll, sr);
+            std::memcpy(p->hn_job_loop, la, (size_t)ll * sizeof(float));
+            p->hn_job_len = ll;
+            p->hn_job_sr  = sr;
+            p->hn_job_gen = p->hn_gen;
+            p->hn_job_state.store(1, std::memory_order_release);
+        } else if (p->hn_trigger_pending) {
+            // Degenerate empty capture: nothing to analyze — hand over now.
+            p->envelope.trigger();
+            p->xfade_gap = false;
+            p->xfade_run = true;
+            p->hn_trigger_pending = false;
+        }
+        p->hn_needs_analysis = false;
+    }
+    // Consume a finished analysis: load the chord, re-seed the voice banks and
+    // start the new attack. Deferring the attack until the chord exists is what
+    // removes the chord-swap click; results from before a reset() are dropped.
+    if (p->hn_job_state.load(std::memory_order_acquire) == 2) {
+        if (p->hn_job_gen == p->hn_gen) {
+            p->hn_state = p->hn_job_result;
             p->hn_v0.reset(p->hn_state, sr);
             p->hn_vd.reset(p->hn_state, sr);
             p->hn_v1.reset(p->hn_state, sr);
             p->hn_v2.reset(p->hn_state, sr);
             p->hn_t_bright = 1e9f;   // fresh voices → force a timbre re-apply
 #ifdef MEGALO_RAVE
-            if (p->rave.valid()) p->rave.encode(la, ll, sr);
+            if (p->rave.valid()) p->rave.encode(p->hn_job_loop, p->hn_job_len, sr);
 #endif
+            if (p->hn_trigger_pending) {
+                p->envelope.trigger();
+                p->xfade_gap = false;
+                p->xfade_run = true;   // new chord ready → fade the dry back
+                p->hn_trigger_pending = false;
+            }
         }
-        p->hn_needs_analysis = false;
-    }
-    // The fresh chord (additive voices, or the granular fallback when no pitch
-    // was found) now exists → start the freeze attack from zero. Deferring it to
-    // here, rather than firing at LoopReady, is what removes the chord-swap click
-    // and lets the dry-fill crossfade cleanly into the wet.
-    if (p->hn_trigger_pending) {
-        p->envelope.trigger();
-        p->xfade_gap = false;
-        p->xfade_run = true;   // new chord ready → fade the dry back to the blend
-        p->hn_trigger_pending = false;
+        p->hn_job_state.store(0, std::memory_order_release);
     }
     // Re-apply the timbre gains only when a control moved (or after analysis).
     if (p->hn_state.valid &&
@@ -447,13 +566,28 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             p->pv1.reset();
             p->pv2.reset();
 #endif
+#ifdef MEGALO_HN_SYNTH
+            // Move the outgoing chord to the release bank BEFORE the envelope
+            // reset: the bank states (oscillator phases included) plus the
+            // releasing envelope are copied, so the old pad's tail continues
+            // seamlessly on its own while the new chord is analyzed and
+            // attacks. A faster retrigger simply steals the slot.
+            if (p->hn_state.valid) {
+                p->hn_p0    = p->hn_v0;
+                p->hn_pd    = p->hn_vd;
+                p->hn_p1    = p->hn_v1;
+                p->hn_p2    = p->hn_v2;
+                p->env_prev = p->envelope;
+            }
+#endif
             // Start the attack from zero so the pad fades in cleanly — no step
-            // when the prior release had not fully decayed (the wet gain has
-            // been at zero since the onset ramp completed, so this is silent).
+            // when the prior release had not fully decayed (the outgoing chord
+            // now lives in the release bank; the stale copy in the active bank
+            // is silenced by this reset until the analysis re-seeds it).
             p->envelope.reset();
-            // Keep the output fully on the live dry over the hand-over. The
-            // ramp has long finished by now (capture ≥ ~170 ms ≫ XFADE_UP_MS),
-            // so xfade is already 1 — the gap flag just keeps it pinned there.
+            // Keep the dry boosted over the hand-over. The onset ramp has long
+            // finished by now (capture ≥ ~170 ms ≫ XFADE_UP_MS), so xfade is
+            // already 1 — the gap flag just keeps it pinned there.
             p->xfade_gap = true;
 #ifdef MEGALO_HN_SYNTH
             // MegaloHN: the additive voices aren't analyzed/reset until the next
@@ -479,13 +613,40 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
         const int      llen  = p->freeze.loop_len();
         const float    lper  = p->freeze.period();   // 0 = unpitched content
 
-        float freeze_sig;
         // v1/v2 live at loop scope: the right channel's phase-vocoder path
         // shares them. Granular voices for pitch 1/2 (else: HN replaces them).
         float v1 = 0.0f, v2 = 0.0f;
+
+        // Advance the envelopes exactly once per sample; both channels share
+        // them. Each wet source carries its own gain BEFORE the shared filter:
+        // active chord × env_g, release bank × prev_g, granular fallback
+        // × env_g × gran_gate.
+        const float env_g = p->envelope.process();
+#ifdef MEGALO_HN_SYNTH
+        const float prev_g = p->env_prev.is_active() ? p->env_prev.process() : 0.0f;
+#endif
+
+        // Advance the onset crossfade once per sample (shared L/R). xfade ramps
+        // up over XFADE_UP_MS after the onset (anti-click), holds at 1 until the
+        // new pad is ready, then decays to 0 over the envelope ATTACK time,
+        // fading the boosted dry back to the steady blend.
+        if (p->xfade_run)
+            p->xfade = std::max(0.0f, p->xfade - xfade_dec);
+        else if (p->xfade_gap)
+            p->xfade = std::min(1.0f, p->xfade + xfade_up_inc);
+        const float xf    = p->xfade;
+        const float dry_g = (dry_g0 + (1.0f - dry_g0) * xf) * dry_level;
+        // The (1 − xf) gate silences ONLY the granular fallback over the
+        // capture gap (its loop buffer is about to be overwritten in place).
+        // Additive chords are never gated: the outgoing chord keeps releasing
+        // from the release bank while the new one attacks.
+        const float gran_gate = 1.0f - xf;
+
+        float wet_l = 0.0f;              // pre-filter wet mix, left
+        float wet_r = 0.0f;              // right (used on the stereo path)
+
 #ifdef MEGALO_HN_SYNTH
         const bool hn_on = p->hn_state.valid;
-        float hn_wet_r = 0.0f;   // HN right channel (carried to the stereo block)
         if (hn_on) {
             // Polyphonic additive resynthesis of the frozen chord. The granular
             // players are skipped entirely on this path.
@@ -504,10 +665,10 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
                     base_l = l0 * (1.0f - detune_blend) + ld * detune_blend;
                     base_r = r0 * (1.0f - detune_blend) + rd * detune_blend;
                 }
-                freeze_sig = base_l + (pitch1_en ? l1 * p1_lvl : 0.0f)
-                                    + (pitch2_en ? l2 * p2_lvl : 0.0f);
-                hn_wet_r   = base_r + (pitch1_en ? r1 * p1_lvl : 0.0f)
-                                    + (pitch2_en ? r2 * p2_lvl : 0.0f);
+                wet_l = (base_l + (pitch1_en ? l1 * p1_lvl : 0.0f)
+                                + (pitch2_en ? l2 * p2_lvl : 0.0f)) * env_g;
+                wet_r = (base_r + (pitch1_en ? r1 * p1_lvl : 0.0f)
+                                + (pitch2_en ? r2 * p2_lvl : 0.0f)) * env_g;
             } else {
                 const float h0 = p->hn_v0.process();
                 const float h1 = p->hn_v1.process();
@@ -517,9 +678,9 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
                 const float base = detune_en
                     ? h0 * (1.0f - detune_blend) + p->hn_vd.process() * detune_blend
                     : h0;
-                freeze_sig = base + (pitch1_en ? h1 * p1_lvl : 0.0f)
-                                  + (pitch2_en ? h2 * p2_lvl : 0.0f);
-                hn_wet_r = freeze_sig;   // centred
+                wet_l = (base + (pitch1_en ? h1 * p1_lvl : 0.0f)
+                              + (pitch2_en ? h2 * p2_lvl : 0.0f)) * env_g;
+                wet_r = wet_l;   // centred
             }
         } else
 #endif
@@ -546,41 +707,52 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
             const float base_sig = detune_en
                 ? v0 * (1.0f - detune_blend) + vd * detune_blend
                 : v0;
-            freeze_sig = base_sig
-                + (pitch1_en ? v1 * p1_lvl : 0.0f)
-                + (pitch2_en ? v2 * p2_lvl : 0.0f);
+            wet_l = (base_sig
+                     + (pitch1_en ? v1 * p1_lvl : 0.0f)
+                     + (pitch2_en ? v2 * p2_lvl : 0.0f)) * env_g * gran_gate;
         }
 
-        freeze_sig  = p->filter.process(freeze_sig);
+#ifdef MEGALO_HN_SYNTH
+        // Outgoing chord's release, from the bank frozen at LoopReady.
+        if (prev_g > 0.0f) {
+            if (stereo && hn_width > 0.0f) {
+                float l0, r0, l1, r1, l2, r2;
+                p->hn_p0.process_stereo(l0, r0, hn_width);
+                p->hn_p1.process_stereo(l1, r1, hn_width);
+                p->hn_p2.process_stereo(l2, r2, hn_width);
+                float base_l = l0, base_r = r0;
+                if (detune_en) {
+                    float ld, rd;
+                    p->hn_pd.process_stereo(ld, rd, hn_width);
+                    base_l = l0 * (1.0f - detune_blend) + ld * detune_blend;
+                    base_r = r0 * (1.0f - detune_blend) + rd * detune_blend;
+                }
+                wet_l += (base_l + (pitch1_en ? l1 * p1_lvl : 0.0f)
+                                 + (pitch2_en ? l2 * p2_lvl : 0.0f)) * prev_g;
+                wet_r += (base_r + (pitch1_en ? r1 * p1_lvl : 0.0f)
+                                 + (pitch2_en ? r2 * p2_lvl : 0.0f)) * prev_g;
+            } else {
+                const float h0 = p->hn_p0.process();
+                const float h1 = p->hn_p1.process();
+                const float h2 = p->hn_p2.process();
+                const float base = detune_en
+                    ? h0 * (1.0f - detune_blend) + p->hn_pd.process() * detune_blend
+                    : h0;
+                const float pm = (base + (pitch1_en ? h1 * p1_lvl : 0.0f)
+                                       + (pitch2_en ? h2 * p2_lvl : 0.0f)) * prev_g;
+                wet_l += pm;
+                wet_r += pm;
+            }
+        }
+#endif
 
-        // Advance the envelope exactly once per sample; both channels share it.
-        const float env_g = p->envelope.process();
-        freeze_sig *= env_g;
-
-        // Advance the onset crossfade once per sample (shared L/R). xfade ramps
-        // up over XFADE_UP_MS after the onset (anti-click), holds at 1 until the
-        // new pad is ready, then decays to 0 over the envelope ATTACK time,
-        // fading the boosted dry back to the steady blend.
-        if (p->xfade_run)
-            p->xfade = std::max(0.0f, p->xfade - xfade_dec);
-        else if (p->xfade_gap)
-            p->xfade = std::min(1.0f, p->xfade + xfade_up_inc);
-        const float xf    = p->xfade;
-        const float dry_g = (dry_g0 + (1.0f - dry_g0) * xf) * dry_level;
-        const float wet_g = wet_g0 * (1.0f - xf);
-
-        // Dry→wet crossfade: xfade gates both sides simultaneously — dry is
-        // boosted toward full while wet is pulled to zero (xf=1), then they
-        // swap back to the steady blend (xf=0) over env_attack milliseconds.
-        outL[i] = soft_clip(x * dry_g + freeze_sig * wet_g);
+        // Steady equal-power mix; the boosted dry (dry_g) covers the onset
+        // hand-over while the release bank carries the old pad's tail.
+        outL[i] = soft_clip(x * dry_g + p->filter.process(wet_l) * wet_g0);
 
         if (stereo) {
-            float freeze_r;
 #ifdef MEGALO_HN_SYNTH
-            if (hn_on) {
-                // Width-decorrelated right channel (== left when hn_width == 0).
-                freeze_r = hn_wet_r;
-            } else
+            if (!hn_on)
 #endif
             {
                 // Right channel: independent grain randomisation (decorrelated
@@ -608,16 +780,13 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
                 const float base_r = detune_en
                     ? v0r * (1.0f - detune_blend) + vdr * detune_blend
                     : v0r;
-                freeze_r = base_r
-                    + (pitch1_en ? v1r * p1_lvl : 0.0f)
-                    + (pitch2_en ? v2r * p2_lvl : 0.0f);
+                wet_r += (base_r
+                          + (pitch1_en ? v1r * p1_lvl : 0.0f)
+                          + (pitch2_en ? v2r * p2_lvl : 0.0f)) * env_g * gran_gate;
             }
 
-            freeze_r  = p->filter_r.process(freeze_r);
-            freeze_r *= env_g;
-
-            // Same crossfade gains as the left channel (xf/dry_g/wet_g shared).
-            outR[i] = soft_clip(x * dry_g + freeze_r * wet_g);
+            // Same crossfade gains as the left channel (xf/dry_g shared).
+            outR[i] = soft_clip(x * dry_g + p->filter_r.process(wet_r) * wet_g0);
         }
     }
 
@@ -650,4 +819,14 @@ void megalo_dsp_process_stereo(MegaloDsp* p, const MegaloParams* p_,
 float megalo_dsp_trigger(const MegaloDsp* p)
 {
     return p->trigger_value;
+}
+
+void megalo_dsp_flush_analysis(MegaloDsp* p)
+{
+#ifdef MEGALO_HN_SYNTH
+    while (p->hn_job_state.load(std::memory_order_acquire) == 1)
+        std::this_thread::sleep_for(std::chrono::microseconds(100));
+#else
+    (void)p;
+#endif
 }
