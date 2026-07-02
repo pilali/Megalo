@@ -67,6 +67,28 @@ static inline float peak_mag(const float* mag, int nbins, float bin) noexcept
     return b - 0.25f * (a - cc) * p;            // parabola vertex value
 }
 
+// Refined frequency (Hz) of a partial near fractional bin `bin`: snap to the
+// local maximum within ±1 bin, then parabolic-interpolate the vertex
+// POSITION (peak_mag interpolates the vertex VALUE). Recovers the true,
+// slightly stretched frequency of an inharmonic string partial.
+static inline float peak_freq(const float* mag, int nbins, float bin,
+                              float bin_per_hz) noexcept
+{
+    const int c0 = static_cast<int>(std::lround(bin));
+    if (c0 < 4 || c0 >= nbins - 4) return bin / bin_per_hz;
+    int c = c0;
+    // ±3-bin snap: high partials of a stiff string drift more than one bin
+    // above k·f0 (peak_mag keeps ±1 for amplitudes). The caller's ±3 % clamp
+    // bounds the damage if this grabs a foreign peak in a dense chord.
+    for (int d = -3; d <= 3; ++d)
+        if (mag[c0 + d] > mag[c]) c = c0 + d;
+    const float a = mag[c - 1], b = mag[c], cc = mag[c + 1];
+    const float denom = a - 2.0f * b + cc;
+    if (std::abs(denom) < 1e-12f) return static_cast<float>(c) / bin_per_hz;
+    const float p = std::min(0.5f, std::max(-0.5f, 0.5f * (a - cc) / denom));
+    return (static_cast<float>(c) + p) / bin_per_hz;
+}
+
 // ── Detection-robustness tuning (grouped so they can be set by ear) ────────
 // Whitening (④) curbs the "loudest harmonic wins" bias; the two-way mismatch
 // (③) replaces the old odd/even guard and kills octave-UP errors; the
@@ -314,6 +336,14 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
             const float amp = a * amp_scale;
             st.harm_amp [k - 1] = amp;
             st.harm_phase[k - 1] = std::atan2(im[ib], re[ib]);
+            // Measured partial frequency (inharmonicity). Clamped to ±3 % of
+            // the ideal k·f0 so a neighbouring note's partial is never grabbed.
+            {
+                const float ideal = f0 * static_cast<float>(k);
+                float fmeas = hnmf::peak_freq(mag, NB, fb, bin_per_hz);
+                if (std::abs(fmeas - ideal) > 0.03f * ideal) fmeas = ideal;
+                st.harm_freq[k - 1] = fmeas;
+            }
             st.n_partials = k;
             harm_ss += 0.5f * amp * amp;
 

@@ -21,6 +21,16 @@ static constexpr int SEARCH_EXTRA_MS = 120;
 // on very short attacks (raise slightly).
 static constexpr int FREEZE_POST_LOOP_HOLD_MS = 20;
 
+// Absolute onset gate: the fast/slow RMS ratio is level-independent, so in
+// near-silence the tiniest click can trip it and freeze a buffer of noise.
+// Require the fast RMS (power) to exceed ~-55 dBFS before an onset may fire.
+static constexpr float ONSET_ABS_GATE = 3.2e-6f;
+
+// Loop-seam comparison window (ms). Must cover at least one period of the
+// lowest expected fundamental to be meaningful; ~10 ms covers ~100 Hz and
+// keeps the one-shot search affordable on the MOD Dwarf.
+static constexpr int SEAM_CMP_MS = 10;
+
 enum class FreezeEvent { None = 0, Onset = 1, LoopReady = 2 };
 
 // Forward-capture freeze engine with automatic loop-point search.
@@ -86,7 +96,7 @@ public:
             const float thresh_low = 1.5f + threshold * 13.5f;
             const float thresh_hi  = thresh_low * 1.3f;
 
-            if (_onset_armed && ratio > thresh_hi) {
+            if (_onset_armed && ratio > thresh_hi && _rms_fast > ONSET_ABS_GATE) {
                 _onset_armed = false;
                 _onset_hold  = refractory;
 
@@ -147,19 +157,32 @@ private:
     void _search_and_finalise() noexcept {
         const int search_len = _rec_pos;
         const int target_len = std::min(_loop_target, search_len);
-        const int cmp        = std::min(128, target_len / 4);
+        // Compare over ≥ one period of a low note (SEAM_CMP_MS), not a fixed
+        // 128 samples (~2.7 ms) — below ~350 Hz that short window made the
+        // seam choice essentially random, causing per-revolution wobble.
+        const int cmp = std::clamp((int)(_sr * SEAM_CMP_MS * 0.001),
+                                   128, std::max(128, target_len / 4));
+        // Keep the one-shot search cost bounded: coarser stride for the
+        // longer window (same total MACs order as the previous 128 × step-4).
+        const int step = (cmp > 256) ? 8 : 4;
 
         int   best_start = 0;
         float best_score = 1e38f;
 
-        for (int p = 0; p <= search_len - target_len; p += 4) {
-            float score         = 0.0f;
+        for (int p = 0; p <= search_len - target_len; p += step) {
+            float diff          = 0.0f;
+            float energy        = 0.0f;
             const float* head   = _loop + p;
             const float* tail   = _loop + p + target_len - cmp;
             for (int k = 0; k < cmp; ++k) {
                 const float d = head[k] - tail[k];
-                score += d * d;
+                diff   += d * d;
+                energy += head[k] * head[k] + tail[k] * tail[k];
             }
+            // Energy-normalised mismatch: the raw Σd² is minimised by any
+            // quiet window regardless of how bad the seam is *relatively*,
+            // which biased the pick toward silence on decaying notes.
+            const float score = diff / (energy + 1e-9f);
             if (score < best_score) { best_score = score; best_start = p; }
         }
 

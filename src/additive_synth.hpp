@@ -99,10 +99,16 @@ private:
 
         for (int k = 0; k < _st.n_partials; ++k) {
             const float amp = _eff_amp[k];
+            // Measured partial frequency when available (keeps the string's
+            // natural inharmonic stretch); ideal k·f0 otherwise (legacy
+            // analyzers leave harm_freq at 0).
+            const float fk = ((_st.harm_freq[k] > 0.0f)
+                              ? _st.harm_freq[k]
+                              : _st.f0 * static_cast<float>(k + 1)) * _pitch_ratio;
+            if (fk >= _sr * 0.46f) break;
             if (amp < 1e-7f) continue;
-            if (f0 * static_cast<float>(k + 1) >= _sr * 0.46f) break;
 
-            _phase[k] += float(2.0 * M_PI) * f0 * static_cast<float>(k + 1) / _sr;
+            _phase[k] += float(2.0 * M_PI) * fk / _sr;
             if (_phase[k] >  float(M_PI)) _phase[k] -= float(2.0f * M_PI);
             if (_phase[k] < -float(M_PI)) _phase[k] += float(2.0f * M_PI);
 

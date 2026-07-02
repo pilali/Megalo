@@ -50,14 +50,17 @@ public:
             _init = true;
         }
 
-        float out = 0.0f;
+        float out  = 0.0f;
+        float wsum = 0.0f;
         for (int k = 0; k < N_VOICES; ++k) {
             Voice& v      = _v[k];
             v.grain_len   = grain_samples;
             v.xfade_len   = xfade_samples;
 
             // Trapezoidal cosine amplitude envelope
-            out += _read(loop, loop_len, v, speed) * _amp(v);
+            const float a = _amp(v);
+            out  += _read(loop, loop_len, v, speed) * a;
+            wsum += a;
 
             if (++v.cursor >= v.grain_len) {
                 v.cursor = 0;
@@ -65,7 +68,12 @@ public:
             }
         }
 
-        return out * (1.0f / (float)N_VOICES);
+        // Normalise by the actual envelope sum (overlap-add style) instead of
+        // the fixed 1/N: unless xfade == grain/4 the trapezoid sum ripples at
+        // sr/grain_len Hz, which was audible as periodic pumping of the pad.
+        // ×0.75 matches the average duty of the old 1/N scaling so existing
+        // presets keep their level.
+        return (out / std::max(wsum, 0.5f)) * 0.75f;
     }
 
 private:
@@ -88,15 +96,23 @@ private:
         return 1.0f;
     }
 
-    // Linear-interpolated read at pos + cursor*speed, wrapped into loop.
+    // 4-point Catmull-Rom read at pos + cursor*speed, wrapped into loop.
+    // Cubic interpolation keeps the top octave clean on transposed voices
+    // (linear reads audibly dulled ±12 st and let images fold back).
     static float _read(const float* loop, int loop_len,
                        const Voice& v, float speed) noexcept {
         float lp = v.pos + (float)v.cursor * speed;
         lp -= (float)loop_len * std::floor(lp / (float)loop_len);
-        const int   i0   = (int)lp;
-        const int   i1   = (i0 + 1) % loop_len;
-        const float frac = lp - (float)i0;
-        return loop[i0] + frac * (loop[i1] - loop[i0]);
+        const int   i1   = (int)lp;
+        const float frac = lp - (float)i1;
+        const int   i0   = (i1 > 0) ? i1 - 1 : loop_len - 1;
+        const int   i2   = (i1 + 1 < loop_len) ? i1 + 1 : 0;
+        const int   i3   = (i2 + 1 < loop_len) ? i2 + 1 : 0;
+        const float y0 = loop[i0], y1 = loop[i1], y2 = loop[i2], y3 = loop[i3];
+        const float c1 = 0.5f * (y2 - y0);
+        const float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
+        const float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+        return ((c3 * frac + c2) * frac + c1) * frac + y1;
     }
 
     float _rand01() noexcept {

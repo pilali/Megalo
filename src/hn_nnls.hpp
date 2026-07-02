@@ -61,6 +61,7 @@ inline void hn_refine_nnls(const float* mag, int nbins, float sr, int fft_n,
     static thread_local float env  [MAXC][HN_MAX_PARTIALS];
     static thread_local float obs  [MAXC][HN_MAX_PARTIALS];
     static thread_local float freq [MAXC][HN_MAX_PARTIALS];
+    static thread_local float mfreq[MAXC][HN_MAX_PARTIALS];   // measured (inharmonic)
     static thread_local int   np   [MAXC];
 
     for (int c = 0; c < nc; ++c) {
@@ -73,6 +74,11 @@ inline void hn_refine_nnls(const float* mag, int nbins, float sr, int fft_n,
             freq[c][k - 1] = f;
             obs [c][k - 1] = o;
             a   [c][k - 1] = o;          // init; shared atoms over-count, EM fixes
+            // Measured partial frequency for the resynthesis (±3 % clamp,
+            // same rule as the greedy pass). Grouping keeps the ideal freq.
+            float fm = hnmf::peak_freq(mag, nbins, f * bin_per_hz, bin_per_hz);
+            if (std::abs(fm - f) > 0.03f * f) fm = f;
+            mfreq[c][k - 1] = fm;
             np  [c]        = k;
         }
     }
@@ -122,7 +128,8 @@ inline void hn_refine_nnls(const float* mag, int nbins, float sr, int fft_n,
         s = HNState{};
         s.f0 = cf0[c];
         for (int k = 0; k < np[c]; ++k) {
-            s.harm_amp[k] = a[c][k];
+            s.harm_amp [k] = a[c][k];
+            s.harm_freq[k] = mfreq[c][k];
             if (a[c][k] > 1e-6f) s.n_partials = k + 1;
         }
         s.confidence = energy[c] / (max_e + 1e-12f);

@@ -119,8 +119,16 @@ static inline double semi_to_ratio(float semi) noexcept {
     return std::pow(2.0, static_cast<double>(semi) / 12.0);
 }
 
+// Knee clipper: bit-transparent below the knee, smooth tanh saturation above,
+// bounded at ±1. The previous x/(1+|x|) waveshaper compressed the WHOLE
+// signal (−3.5 dB and audible odd harmonics already at −6 dBFS), so the dry
+// path never passed clean even at blend = 0.
 static inline float soft_clip(float x) noexcept {
-    return x / (1.0f + std::abs(x));
+    constexpr float KNEE = 0.7f;             // ≈ −3 dBFS
+    const float a = std::abs(x);
+    if (a <= KNEE) return x;
+    const float y = KNEE + (1.0f - KNEE) * std::tanh((a - KNEE) / (1.0f - KNEE));
+    return (x < 0.0f) ? -y : y;
 }
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────
