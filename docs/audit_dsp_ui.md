@@ -556,14 +556,20 @@ HN / bruit HN stéréo-enveloppé, #12 cible `make audit` en CI.
 
 ### Quatrième passe (solde final)
 
-- **Phase locking PV (#11)** : verrouillage de phase identité
-  (Laroche-Dolson) autour des pics spectraux + conservation de la fréquence
-  du contributeur le plus fort en cas de collision de bins. Ripple
-  d'enveloppe mesuré 3,99 → 3,38 dB sur tonalité complexe décalée de +7 st ;
-  le gain est surtout attendu sur matériau transitoire. Limitation
-  pré-existante documentée : le remap de bins disperse le lobe des
-  fondamentales graves (< ~500 Hz), où la voix décalée ressort faible — le
-  moteur granulaire (défaut) reste recommandé pour les graves.
+- **Vocodeur de phase entièrement refondu (#11 + piste « décalage par
+  pic »)**. Deux découvertes en implémentant : (1) un bug d'origine — la
+  conversion déviation de phase → Hz omettait le facteur 1/(2π), donc chaque
+  fréquence instantanée était ~6,3× trop loin de son centre de bin : le PV
+  n'a jamais reconstruit proprement, passthrough compris ; (2) le remap
+  bin-par-bin déchiquetait le lobe des partiels. Nouvelle synthèse :
+  translation FRACTIONNAIRE par pic (Laroche & Dolson 1999) — lobe complexe
+  dé-alterné, interpolé à l'offset exact de la fréquence instantanée du pic,
+  phaseur accumulé par région (le verrouillage de phase devient structurel).
+  Mesures (sinus 220 Hz gelé) : passthrough 0,400/0,40 exact ; +7 st → 0,367
+  à 329,6 Hz ; +12 → 0,364 à 440 Hz ; **−12 → 0,368 à 110 Hz** (sortait à
+  0,000 avant) ; ripple ≤ 0,7 dB. Dans la chaîne complète, les voix PV
+  passent de −40 dB à pleine échelle sur toute la tessiture. Gate
+  `tools/pv_test.cpp` ajouté à `make audit`.
 - **Bruit HN** : canal droit décorrélé (générateurs indépendants, mélangés
   par `hn_width` — l'air s'élargit avec le pad au lieu de rester au centre)
   et résidu mesuré sur la seconde moitié de la boucle (le transitoire de
@@ -583,5 +589,4 @@ HN / bruit HN stéréo-enveloppé, #12 cible `make audit` en CI.
   PITCH ENGINE (qui ne pilotait que le fallback granulaire, trompeur) cède
   sa place au témoin, et le titre devient « MEGALO HN ».
 
-L'audit est soldé. Piste future unique : un vrai décalage par pic (au lieu
-du remap de bins) pour les graves du phase vocoder.
+L'audit est intégralement soldé, piste « décalage par pic » incluse.

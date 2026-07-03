@@ -141,12 +141,14 @@ audit: $(HEADERS)
 	$(CXX) $(AUDIT_FLAGS) -DMEGALO_HN_SYNTH -pthread tools/click_test.cpp src/megaloHN_dsp.cpp -o $(AUDIT_DIR)/click_megaloHN
 	$(CXX) $(AUDIT_FLAGS) tools/grain_test.cpp src/megalo_dsp.cpp -o $(AUDIT_DIR)/grain_test
 	$(CXX) $(AUDIT_FLAGS) -DMEGALO_HN_SYNTH -pthread tools/release_test.cpp src/megaloHN_dsp.cpp -o $(AUDIT_DIR)/release_test
+	$(CXX) $(AUDIT_FLAGS) -DMEGALO_PV_N=2048 tools/pv_test.cpp -o $(AUDIT_DIR)/pv_test
 	@echo "══ multi-F0 detection ══";   $(AUDIT_DIR)/hn_test | tail -3
 	@echo "══ ADSR (informational) ══"; $(AUDIT_DIR)/hn_env_test
 	@echo "══ clicks: Megalo ══";       $(AUDIT_DIR)/click_megalo
 	@echo "══ clicks: MegaloHN ══";     $(AUDIT_DIR)/click_megaloHN
 	@echo "══ grain pumping ══";        $(AUDIT_DIR)/grain_test
 	@echo "══ HN release bank ══";      $(AUDIT_DIR)/release_test
+	@echo "══ phase vocoder ══";        $(AUDIT_DIR)/pv_test
 	@echo "AUDIT OK"
 
 .PHONY: audit

@@ -6,9 +6,13 @@
 
 // Phase vocoder pitch shifter — no external dependencies.
 //
-// Algorithm: frequency-domain bin remapping (Laroche & Dolson).
-// The frozen loop is read at normal speed; pitch shift is achieved by
-// mapping analysis bin k → synthesis bin round(k × ratio).
+// Algorithm: per-peak spectral translation (Laroche & Dolson 1999).
+// The frozen loop is read at normal speed; each spectral peak's region of
+// influence is translated by the FRACTIONAL shift of its instantaneous
+// frequency (de-alternated complex lobe, linear interpolation) and rotated
+// by a per-region phasor accumulating the frequency difference — the lobe
+// shape and the frame-to-frame phase advance agree on the same frequency,
+// so partials reconstruct at full level across the whole range.
 //
 // FFT size is controlled at compile time:
 //   -DMEGALO_PV_N=2048   (default, recommended for Pi 5)
@@ -39,13 +43,10 @@ public:
 
     void reset() noexcept {
         std::memset(_ana_phase, 0, sizeof _ana_phase);
-        std::memset(_syn_phase, 0, sizeof _syn_phase);
         std::memset(_ana_mag,   0, sizeof _ana_mag);
         std::memset(_ana_freq,  0, sizeof _ana_freq);
-        std::memset(_syn_mag,   0, sizeof _syn_mag);
-        std::memset(_syn_freq,  0, sizeof _syn_freq);
-        std::memset(_src_mag,   0, sizeof _src_mag);
-        std::memset(_src_of,    0, sizeof _src_of);
+        for (auto& c : _ana_cx) c = {};
+        std::memset(_rot,       0, sizeof _rot);
         std::memset(_out_buf,   0, sizeof _out_buf);
         for (auto& c : _cx) c = {};
         _read_pos  = 0.0;
@@ -110,70 +111,94 @@ private:
             dp -= 2.0f * float(M_PI) * std::round(dp * float(M_1_PI) * 0.5f);
 
             _ana_mag[k]  = mag;
-            _ana_freq[k] = k * _freq_pbin + dp * _osamp * _freq_pbin;
+            // dev(Hz) = dp/(2π) · sr/HOP = dp/(2π) · osamp · freq_pbin.
+            // The original code dropped the 1/(2π): every instantaneous
+            // frequency came out ~6.3× too far from its bin centre, which is
+            // why the vocoder never reconstructed cleanly, shifts included.
+            _ana_freq[k] = k * _freq_pbin
+                         + dp * _osamp * _freq_pbin * (float)(0.5 / M_PI);
+            // De-alternated complex spectrum for the fractional lobe
+            // translation below: a Hann-windowed sinusoid carries a linear
+            // phase of ~−π per bin (sign alternation); removing it makes the
+            // lobe a SMOOTH complex curve that can be linearly interpolated.
+            _ana_cx[k] = (k & 1) ? -_cx[k] : _cx[k];
         }
 
-        // ── Pitch shift: remap bin k → bin ⌊k × ratio + 0.5⌋ ────────────
-        std::memset(_syn_mag,  0, sizeof _syn_mag);
-        std::memset(_syn_freq, 0, sizeof _syn_freq);
-        std::memset(_src_mag,  0, sizeof _src_mag);
-        for (int k = 0; k < BINS; k++) {
-            const int dst = static_cast<int>(k * _ratio + 0.5f);
-            if (dst < BINS) {
-                _syn_mag[dst] += _ana_mag[k];
-                // On collisions keep the STRONGEST contributor's frequency
-                // and source bin (the old code kept whichever landed last).
-                if (_ana_mag[k] > _src_mag[dst]) {
-                    _src_mag[dst]  = _ana_mag[k];
-                    _syn_freq[dst] = _ana_freq[k] * _ratio;
-                    _src_of[dst]   = k;
-                }
-            }
-        }
-
-        // ── Synthesis phases with identity phase locking (Laroche-Dolson).
-        // Spectral PEAKS accumulate phase from their instantaneous frequency;
-        // the bins around each peak are locked to it, reproducing the
-        // analysis-side phase relationships. Free-running every bin (the old
-        // behaviour) let the bins of one partial drift apart across frames —
-        // the classic metallic/"phasey" vocoder smear.
-        const float synth_expct = 2.0f * float(M_PI) * HOP / _sr;
-
+        // ── Per-peak pitch shift (Laroche & Dolson 1999) ────────────────────
+        // Each spectral peak (= one partial) is translated to its target
+        // location as a RIGID block together with its whole region of
+        // influence, and the region carries a per-peak phasor accumulating
+        // the frequency difference. The window mainlobe therefore arrives
+        // INTACT, and the analysis-side phase relationships inside a partial
+        // are reproduced exactly (identity locking is structural here).
+        //
+        // The previous per-bin remap (dst = round(k·ratio)) stretched and
+        // punched holes in the lobe — adjacent sources landed ~ratio bins
+        // apart — which collapsed low fundamentals whose lobes only span a
+        // few bins (measured −30 dB on a 220 Hz partial shifted to 330 Hz).
+        // 1. Peaks on the ANALYSIS spectrum (local max over ±2 bins).
         int n_peaks = 0;
         for (int j = 2; j < BINS - 2; ++j) {
-            const float m = _syn_mag[j];
+            const float m = _ana_mag[j];
             if (m > 1e-9f &&
-                m >= _syn_mag[j - 1] && m >= _syn_mag[j - 2] &&
-                m >  _syn_mag[j + 1] && m >  _syn_mag[j + 2])
+                m >= _ana_mag[j - 1] && m >= _ana_mag[j - 2] &&
+                m >  _ana_mag[j + 1] && m >  _ana_mag[j + 2])
                 _peaks[n_peaks++] = j;
         }
 
         if (n_peaks == 0) {
-            // Silence / degenerate frame: plain per-bin accumulation.
-            for (int k = 0; k < BINS; k++) {
-                _syn_phase[k] += _syn_freq[k] * synth_expct;
-                _cx[k] = std::polar(_syn_mag[k], _syn_phase[k]);
-            }
+            for (int k = 0; k < BINS; k++) _cx[k] = {};   // silent frame
         } else {
-            // Peaks: normal phase accumulation (kept wrapped for precision).
-            for (int i = 0; i < n_peaks; ++i) {
-                const int p = _peaks[i];
-                _syn_phase[p] += _syn_freq[p] * synth_expct;
-                _syn_phase[p] -= 2.0f * float(M_PI) *
-                                 std::round(_syn_phase[p] * float(M_1_PI) * 0.5f);
+            // 2. Region boundaries at the magnitude minimum between peaks.
+            _bounds[0] = 0;
+            for (int i = 1; i < n_peaks; ++i) {
+                int   bmin = _peaks[i - 1];
+                float mmin = 1e30f;
+                for (int j = _peaks[i - 1]; j <= _peaks[i]; ++j)
+                    if (_ana_mag[j] < mmin) { mmin = _ana_mag[j]; bmin = j; }
+                _bounds[i] = bmin;
             }
-            // Every other bin: locked to its nearest peak with the analysis
-            // phase offset between their SOURCE bins.
-            int pi = 0;
-            for (int k = 0; k < BINS; k++) {
-                while (pi + 1 < n_peaks &&
-                       std::abs(_peaks[pi + 1] - k) <= std::abs(_peaks[pi] - k))
-                    ++pi;
-                const int p = _peaks[pi];
-                if (k != p)
-                    _syn_phase[k] = _syn_phase[p]
-                                  + (_ana_phase[_src_of[k]] - _ana_phase[_src_of[p]]);
-                _cx[k] = std::polar(_syn_mag[k], _syn_phase[k]);
+            _bounds[n_peaks] = BINS;
+
+            // 3. Translate each region by the FRACTIONAL shift of its peak's
+            // instantaneous frequency — the de-alternated complex lobe is
+            // linearly interpolated at the exact offset, so the lobe SHAPE
+            // (which encodes the partial's sub-bin position) and the
+            // frame-to-frame phasor advance agree on the same frequency.
+            // (An integer translation left them disagreeing by up to half a
+            // bin: the overlapped frames partially cancelled and the low
+            // partials smeared — the very defect this rework fixes.)
+            // _rot[] is kept per SOURCE bin but incremented region-wide with
+            // the peak's frequency, so a peak drifting by a bin between
+            // frames inherits a coherent phasor history.
+            for (int k = 0; k < BINS; k++) _cx[k] = {};
+            const float rot_c = 2.0f * float(M_PI) * HOP * (_ratio - 1.0f) / _sr;
+            for (int i = 0; i < n_peaks; ++i) {
+                const int   p      = _peaks[i];
+                const float inc    = rot_c * _ana_freq[p];
+                const int   lo     = _bounds[i], hi = _bounds[i + 1];
+                for (int j = lo; j < hi; ++j) {
+                    _rot[j] += inc;
+                    _rot[j] -= 2.0f * float(M_PI) *
+                               std::round(_rot[j] * float(M_1_PI) * 0.5f);
+                }
+                const std::complex<float> ph = std::polar(1.0f, _rot[p]);
+                const float d_frac = (_ana_freq[p] / _freq_pbin) * (_ratio - 1.0f);
+                const int dst_lo = std::max(0, (int)std::ceil((float)lo + d_frac));
+                const int dst_hi = std::min(BINS - 1,
+                                            (int)std::floor((float)(hi - 1) + d_frac));
+                for (int dst = dst_lo; dst <= dst_hi; ++dst) {
+                    const float sp = (float)dst - d_frac;
+                    int j0 = (int)sp;
+                    if (j0 >= hi - 1) j0 = hi - 2;
+                    if (j0 < lo) j0 = lo;
+                    const float t = std::min(1.0f, std::max(0.0f, sp - (float)j0));
+                    std::complex<float> v =
+                        _ana_cx[j0] + t * (_ana_cx[j0 + 1] - _ana_cx[j0]);
+                    v *= ph;
+                    if (dst & 1) v = -v;      // restore the Hann alternation
+                    _cx[dst] += v;            // overlapping regions just add
+                }
             }
         }
         // Hermitian symmetry for real output
@@ -232,14 +257,12 @@ private:
 
     float _win[N]               = {};
     float _ana_phase[BINS]      = {};
-    float _syn_phase[BINS]      = {};
     float _ana_mag[BINS]        = {};
     float _ana_freq[BINS]       = {};
-    float _syn_mag[BINS]        = {};
-    float _syn_freq[BINS]       = {};
-    float _src_mag[BINS]        = {};   // strongest contributor per syn bin
-    int   _src_of[BINS]         = {};   // its analysis source bin
-    int   _peaks[BINS]          = {};   // per-frame peak list (phase locking)
+    std::complex<float> _ana_cx[BINS] = {};   // de-alternated analysis lobe
+    float _rot[BINS]            = {};   // per-region rotation accumulators
+    int   _peaks[BINS]          = {};   // per-frame peak list
+    int   _bounds[BINS + 1]     = {};   // per-frame region boundaries
     float _out_buf[OUTBUF]      = {};
     std::complex<float> _cx[N]  = {};
 
