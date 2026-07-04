@@ -497,13 +497,16 @@ void ThresholdLine::paint(juce::Graphics& g)
 WindowPanel::WindowPanel(APVTS& a)
     : threshold(a, "onset_threshold"), envEditor(a)
 {
-    // Grain Size / Crossfade drive the granular engine (and the granular
-    // fallback of the H+N build), so they are surfaced in both builds —
-    // they used to exist only in the host generic view.
+    // Sample Length / Attack Skip define the capture window (both builds).
     topHandles.add(new TimeHandle(a, "sample_ms",      "SAMPLE", juce::Colour(0xfffff5e6)));
     topHandles.add(new TimeHandle(a, "attack_skip_ms", "SKIP",   juce::Colour(0xfffff5e6)));
+#ifndef MEGALO_HN_SYNTH
+    // Grain Size / Crossfade drive Megalo's granular engine. On MegaloHN the
+    // granular player is only a fallback, so these are fixed in the DSP and not
+    // surfaced here (nor as parameters — see PluginProcessor::createLayout).
     topHandles.add(new TimeHandle(a, "grain_size_ms",  "SIZE",   juce::Colour(0xffffd9a8)));
     topHandles.add(new TimeHandle(a, "grain_xfade_ms", "XFADE",  juce::Colour(0xffffd9a8)));
+#endif
     for (auto* h : topHandles) addAndMakeVisible(h);
 
     addAndMakeVisible(envEditor);
@@ -565,12 +568,17 @@ void WindowPanel::paint(juce::Graphics& g)
     g.setColour(megalo::kWhite.withAlpha(0.85f));
     g.fillRect(juce::Rectangle<float>(0.0f, mid - 0.5f, b.getWidth(), 1.0f));
 
-    // Faint grouping brackets (WINDOW = sample+skip, GRAIN = size+xfade),
-    // inset from the window's top edge.
+    // Faint grouping brackets, inset from the window's top edge.
     g.setColour(megalo::kWhite.withAlpha(0.55f));
     g.setFont(megalo::font(10.0f, true));
+#ifdef MEGALO_HN_SYNTH
+    // MegaloHN: only the capture window handles remain (no GRAIN group).
+    g.drawText("WINDOW", juce::Rectangle<int>(0, 4, getWidth(), 12), juce::Justification::centred, false);
+#else
+    // WINDOW = sample+skip, GRAIN = size+xfade.
     g.drawText("WINDOW", juce::Rectangle<int>(0, 4, getWidth() / 2, 12), juce::Justification::centred, false);
     g.drawText("GRAIN",  juce::Rectangle<int>(getWidth() / 2, 4, getWidth() / 2, 12), juce::Justification::centred, false);
+#endif
 }
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -65,8 +65,9 @@
 
         <!-- Functional grouping bracket for the top row.
              WINDOW = SAMPLE + SKIP (capture window definition). The granular
-             GRAIN/XFADE handles are not surfaced: the polyphonic H+N engine
-             ignores them (they remain as ports for the granular fallback). -->
+             GRAIN/XFADE handles are not surfaced: MegaloHN fixes them in the
+             DSP (the granular player is only a fallback), so the ports remain
+             for ABI parity with Megalo but are notOnGUI and ignored. -->
         <div class="megalo-brackets">
             <div class="megalo-bracket" style="left:0; width:100%">WINDOW</div>
         </div>

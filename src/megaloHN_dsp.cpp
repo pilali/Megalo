@@ -336,10 +336,17 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
     const float dry_g0        = std::cos(blend * 1.57079633f);
     // Dry level: gain on the live dry signal (1.0 = neutral). Permanent control.
     const float dry_level     = std::clamp(p_->dry_level,           0.0f,   2.0f);
-    const int   grain_ms      = std::clamp(static_cast<int>(p_->grain_size_ms),    5, 200);
-    const int   grain_samples = std::clamp((int)(sr * grain_ms * 0.001f), 16, FREEZE_MAX_SAMPLES);
-    const int   grain_xfade_ms  = std::clamp(static_cast<int>(p_->grain_xfade_ms), 5, 100);
-    const int   grain_xfade_smp = std::clamp((int)(sr * grain_xfade_ms * 0.001f), 8, grain_samples / 2);
+    // Grain Size / Grain Crossfade are no longer user-exposed on MegaloHN: the
+    // granular player is only the FALLBACK, run when the H+N analysis finds no
+    // notes (inharmonic/noisy content) or during the brief async-analysis
+    // latency. They are fixed here to the smooth, artifact-free operating point
+    // rather than read from their (now notOnGUI) ports. The crossfade is held at
+    // grain/4 — the constant overlap-add sum condition of GrainPlayer's 4-voice
+    // trapezoidal envelope (see granular_looper.hpp) — which removes the
+    // periodic amplitude pumping a mismatched xfade would cause.
+    constexpr int GRAIN_MS    = 100;   // granular fallback grain length
+    const int   grain_samples = std::clamp((int)(sr * GRAIN_MS * 0.001f), 16, FREEZE_MAX_SAMPLES);
+    const int   grain_xfade_smp = std::clamp(grain_samples / 4, 8, grain_samples / 2);
     const float base_pitch    = std::clamp(p_->base_pitch,         -12.0f, 12.0f);
     const float base_speed    = static_cast<float>(semi_to_ratio(base_pitch));
     const float p1_semi       =            p_->pitch1_semi;

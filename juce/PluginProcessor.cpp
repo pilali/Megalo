@@ -36,8 +36,13 @@ APVTS::ParameterLayout MegaloAudioProcessor::createLayout()
     p.add(std::make_unique<AF>(pid("sample_ms"), "Sample Length", intRange(50.0f, 500.0f), 150.0f, FA{}.withLabel("ms")));
     p.add(std::make_unique<AF>(pid("attack_skip_ms"), "Attack Skip", Range(0.0f, 500.0f), 50.0f, FA{}.withLabel("ms")));
     p.add(std::make_unique<AF>(pid("blend"), "Blend", Range(0.0f, 1.0f), 0.8f));
+#ifndef MEGALO_HN_SYNTH
+    // Grain Size / Grain Crossfade drive Megalo's granular engine. On MegaloHN
+    // the granular player is only a fallback (H+N resynthesis is primary), so
+    // these are fixed in the DSP and not exposed as parameters at all.
     p.add(std::make_unique<AF>(pid("grain_size_ms"), "Grain Size", Range(5.0f, 200.0f), 100.0f, FA{}.withLabel("ms")));
     p.add(std::make_unique<AF>(pid("grain_xfade_ms"), "Grain Crossfade", Range(5.0f, 100.0f), 40.0f, FA{}.withLabel("ms")));
+#endif
     p.add(std::make_unique<AF>(pid("base_pitch"), "Base Pitch", intRange(-12.0f, 12.0f), 0.0f, FA{}.withLabel("st")));
     p.add(std::make_unique<AF>(pid("pitch1_semi"), "Voice 1 Pitch", intRange(-24.0f, 24.0f), -12.0f, FA{}.withLabel("st")));
     p.add(std::make_unique<AF>(pid("pitch1_level"), "Voice 1 Level", Range(0.0f, 1.0f), 0.5f));
@@ -90,8 +95,10 @@ MegaloAudioProcessor::MegaloAudioProcessor()
     pSampleMs    = raw("sample_ms");
     pAttackSkip  = raw("attack_skip_ms");
     pBlend       = raw("blend");
+#ifndef MEGALO_HN_SYNTH
     pGrainMs     = raw("grain_size_ms");
     pGrainXfade  = raw("grain_xfade_ms");
+#endif
     pBasePitch   = raw("base_pitch");
     pPitch1Semi  = raw("pitch1_semi");
     pPitch1Lvl   = raw("pitch1_level");
@@ -159,7 +166,15 @@ void MegaloAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
 
     const MegaloParams p {
         pThreshold->load(), pSampleMs->load(), pAttackSkip->load(), pBlend->load(),
-        pGrainMs->load(), pGrainXfade->load(), pBasePitch->load(),
+#ifdef MEGALO_HN_SYNTH
+        // Granular fallback params: fixed, not user-exposed. megaloHN_dsp.cpp
+        // ignores these fields (it uses its own constants); the values here just
+        // fill the shared positional struct. Crossfade = grain/4 (constant-sum).
+        100.0f, 25.0f,
+#else
+        pGrainMs->load(), pGrainXfade->load(),
+#endif
+        pBasePitch->load(),
         pPitch1Semi->load(), pPitch1Lvl->load(), pPitch2Semi->load(), pPitch2Lvl->load(),
         pDetuneCt->load(), pChorusRate->load(), pDetuneBlend->load(),
         pFiltType->load(), pFiltCutoff->load(), pFiltQ->load(),
