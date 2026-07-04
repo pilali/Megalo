@@ -18,7 +18,9 @@
         0 4px 18px rgba(0,0,0,0.45);
     color: #fff;
     font-family: "Nexa", "Questrial", sans-serif;
-    height: 380px;
+    /* 470px (was 380): a second controls row was added for the ONSET knob so
+       row 1 keeps its full-size knobs. */
+    height: 470px;
     position: absolute;
     width: 720px;
     overflow: hidden;
@@ -119,6 +121,17 @@
     /* top is set by --value (0..1, distance from window bottom) */
     top: calc((1 - var(--value, 0.5)) * 100%);
     z-index: 4;
+}
+
+/* Display-only variant: the line still shows position + readout + onset flash
+   but is not draggable (the ONSET knob sets the value). No grab cursor, no
+   grab dot, and it never intercepts pointer events. */
+.megalo-panel{{{cns}}} .megalo-threshold-display {
+    cursor: default;
+    pointer-events: none;
+}
+.megalo-panel{{{cns}}} .megalo-threshold-display::before {
+    display: none;
 }
 
 /* Onset trigger flash — JS toggles .triggered when the plugin's
@@ -479,15 +492,29 @@
 
 /* ── Bottom controls row ────────────────────────────────── */
 .megalo-panel{{{cns}}} .megalo-controls {
-    bottom: 12px;
+    bottom: 14px;
     display: flex;
-    gap: 8px;
-    justify-content: space-between;
+    flex-direction: column;     /* row 1: the five groups; row 2: ONSET */
+    gap: 10px;
     left: 26px;
     position: absolute;
     right: 26px;
     top: 245px;
     z-index: 30;
+}
+
+.megalo-panel{{{cns}}} .megalo-controls-row {
+    display: flex;
+    flex: 1 1 0;
+    gap: 8px;
+    justify-content: space-between;
+}
+
+/* Compact groups (ONSET on row 1, FILTER on row 2) size to content and sit
+   left instead of stretching. Two classes → beats the plain .megalo-group
+   flex regardless of source order. */
+.megalo-panel{{{cns}}} .megalo-group.megalo-group-compact {
+    flex: 0 0 auto;
 }
 
 .megalo-panel{{{cns}}} .megalo-group {

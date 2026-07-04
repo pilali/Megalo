@@ -37,7 +37,7 @@ const KNOB_RANGES = {
   pitch2_semi: [-24, 24], pitch2_level: [0, 1],
   detune_cents: [0, 50], chorus_rate: [0.1, 8], detune_blend: [0, 1],
   filter_cutoff: [20, 20000, 'log'], filter_q: [0.1, 10],
-  base_pitch: [-12, 12], blend: [0, 1], dry_level: [0, 2],
+  base_pitch: [-12, 12], blend: [0, 1], dry_level: [0, 2], onset_threshold: [0, 1],
   hn_brightness: [-1, 1], hn_damping: [0, 1], hn_even_odd: [-1, 1],
   hn_noise: [0, 1], hn_width: [0, 1],
 };
@@ -109,7 +109,7 @@ async function render(page, bundle, ports, panelW, panelH, shots) {
   const browser = await chromium.launch();
   const out = [];
   for (const spec of [
-    { bundle: 'megalo.lv2', ports: COMMON_PORTS, w: 720, h: 380, dsf: 1 },
+    { bundle: 'megalo.lv2', ports: COMMON_PORTS, w: 720, h: 470, dsf: 1 },
     { bundle: 'megaloHN.lv2', ports: { ...COMMON_PORTS, ...HN_PORTS }, w: 720, h: 470, dsf: 2 },
   ]) {
     const ctx = await browser.newContext({

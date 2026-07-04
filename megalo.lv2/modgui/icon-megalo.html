@@ -51,16 +51,12 @@
         <!-- Horizontal white axis line, mid-height of the window -->
         <div class="megalo-midline"></div>
 
-        <!-- Onset threshold: horizontal line driven by JS. data-min/data-max
-             are baked in since MOD-UI's 'start' event ships ports without
-             ranges. -->
-        <div class="megalo-threshold" data-handle="onset_threshold"
-             data-min="0" data-max="1" title="Onset Threshold">
+        <!-- Onset threshold: horizontal line, DISPLAY-ONLY. It reflects the
+             value (position + readout + onset flash) but is no longer draggable
+             — the value is set by the ONSET knob in the controls row. -->
+        <div class="megalo-threshold megalo-threshold-display" data-handle="onset_threshold"
+             data-min="0" data-max="1" title="Onset Threshold (set via the ONSET knob)">
             <span class="megalo-threshold-value" data-handle-value="onset_threshold"></span>
-            <div class="megalo-hit megalo-hit-passive"
-                 mod-role="input-control-port"
-                 mod-port-symbol="onset_threshold"
-                 mod-widget-rotation="270"></div>
         </div>
 
         <!-- Functional grouping brackets for the top row.
@@ -196,6 +192,28 @@
     <!-- ── Knob / switch row below the window ─────────────────────── -->
     <div class="megalo-controls">
 
+      <div class="megalo-controls-row">
+
+        <!-- Onset — the threshold as a knob (the window line is display-only) -->
+        <div class="megalo-group megalo-group-compact">
+            <div class="megalo-group-head">
+                <span class="megalo-group-title">ONSET</span>
+            </div>
+            <div class="megalo-group-body">
+                <div class="megalo-knob" title="Onset Threshold">
+                    <div class="megalo-knob-dial">
+                        <div class="megalo-knob-rotor"
+                             mod-role="input-control-port"
+                             mod-port-symbol="onset_threshold"
+                             mod-widget-rotation="270">
+                            <div class="megalo-knob-pointer"></div>
+                        </div>
+                    </div>
+                    <span class="megalo-knob-label">THRESH</span>
+                </div>
+            </div>
+        </div>
+
         <!-- Voice 1 -->
         <div class="megalo-group">
             <div class="megalo-group-head">
@@ -315,8 +333,43 @@
             </div>
         </div>
 
-        <!-- Filter -->
+        <!-- Global -->
         <div class="megalo-group">
+            <div class="megalo-group-head">
+                <span class="megalo-group-title">GLOBAL</span>
+            </div>
+            <div class="megalo-group-body">
+                <div class="megalo-knob" title="Base Pitch">
+                    <div class="megalo-knob-dial">
+                        <div class="megalo-knob-rotor"
+                             mod-role="input-control-port"
+                             mod-port-symbol="base_pitch"
+                             mod-widget-rotation="270">
+                            <div class="megalo-knob-pointer"></div>
+                        </div>
+                    </div>
+                    <span class="megalo-knob-label">BASE</span>
+                </div>
+                <div class="megalo-knob" title="Sample / Grain Blend">
+                    <div class="megalo-knob-dial">
+                        <div class="megalo-knob-rotor"
+                             mod-role="input-control-port"
+                             mod-port-symbol="blend"
+                             mod-widget-rotation="270">
+                            <div class="megalo-knob-pointer"></div>
+                        </div>
+                    </div>
+                    <span class="megalo-knob-label">BLEND</span>
+                </div>
+            </div>
+        </div>
+
+      </div><!-- /controls-row 1 -->
+
+      <div class="megalo-controls-row">
+
+        <!-- Filter — moved to the second row so ONSET can lead row 1 -->
+        <div class="megalo-group megalo-group-compact">
             <div class="megalo-group-head">
                 <span class="megalo-group-title">FILTER</span>
             </div>
@@ -356,36 +409,7 @@
             </div>
         </div>
 
-        <!-- Global -->
-        <div class="megalo-group">
-            <div class="megalo-group-head">
-                <span class="megalo-group-title">GLOBAL</span>
-            </div>
-            <div class="megalo-group-body">
-                <div class="megalo-knob" title="Base Pitch">
-                    <div class="megalo-knob-dial">
-                        <div class="megalo-knob-rotor"
-                             mod-role="input-control-port"
-                             mod-port-symbol="base_pitch"
-                             mod-widget-rotation="270">
-                            <div class="megalo-knob-pointer"></div>
-                        </div>
-                    </div>
-                    <span class="megalo-knob-label">BASE</span>
-                </div>
-                <div class="megalo-knob" title="Sample / Grain Blend">
-                    <div class="megalo-knob-dial">
-                        <div class="megalo-knob-rotor"
-                             mod-role="input-control-port"
-                             mod-port-symbol="blend"
-                             mod-widget-rotation="270">
-                            <div class="megalo-knob-pointer"></div>
-                        </div>
-                    </div>
-                    <span class="megalo-knob-label">BLEND</span>
-                </div>
-            </div>
-        </div>
+      </div><!-- /controls-row 2 -->
 
     </div>
 
