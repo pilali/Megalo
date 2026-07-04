@@ -269,8 +269,8 @@ function (event, funcs) {
             })
         }
 
-        icon.find('.megalo-threshold').attr('data-axis', 'y-up')
-        delegateDrag('.megalo-threshold', function (el) { return el.parent() })
+        // The threshold line is display-only now (set via the ONSET knob), so
+        // it is not registered for dragging — only the top time handles are.
         delegateDrag('.megalo-handles-top .megalo-handle', function (el) { return el })
 
         // ── ADSR: nearest-breakpoint drag on the envelope area itself.

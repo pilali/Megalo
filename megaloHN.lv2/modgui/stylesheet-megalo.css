@@ -121,6 +121,17 @@
     z-index: 4;
 }
 
+/* Display-only variant: the line still shows position + readout + onset flash
+   but is not draggable (the ONSET knob sets the value). No grab cursor, no
+   grab dot, and it never intercepts pointer events. */
+.megalo-panel{{{cns}}} .megalo-threshold-display {
+    cursor: default;
+    pointer-events: none;
+}
+.megalo-panel{{{cns}}} .megalo-threshold-display::before {
+    display: none;
+}
+
 /* Onset trigger flash — JS toggles .triggered when the plugin's
    trigger_pulse output goes high. The animation pulses the line
    orange then fades back. */
@@ -508,9 +519,13 @@
     padding: 6px 8px 4px;
 }
 
-/* The TIMBRE group takes a full second row (5 knobs spread wide). */
+/* Second row: ONSET + MIX are compact single-knob groups on the left;
+   TIMBRE grows to fill the rest. */
 .megalo-panel{{{cns}}} .megalo-group-wide {
-    flex: 1 1 100%;
+    flex: 1 1 auto;
+}
+.megalo-panel{{{cns}}} .megalo-group.megalo-group-compact {
+    flex: 0 0 auto;
 }
 
 .megalo-panel{{{cns}}} .megalo-group-head {
@@ -547,8 +562,10 @@
     display: flex;
     flex-direction: column;
     user-select: none;
-    /* 40px: 11 knobs across the row must fit the 668px between the panel
-       margins — at 42px the GLOBAL group overflowed past the right edge. */
+    /* 40px: 11 knobs across row 1 must fit the 668px between the panel
+       margins — at 42px the GLOBAL group overflowed past the right edge.
+       The ONSET and DRY knobs live in the second (TIMBRE) row, which has
+       room to spare, so row 1 keeps its original sizing. */
     width: 40px;
 }
 

@@ -123,18 +123,31 @@ LedToggle::LedToggle(APVTS& apvts, const juce::String& paramID)
     attachment = std::make_unique<APVTS::ButtonAttachment>(apvts, paramID, *this);
 }
 
-void LedToggle::paintButton(juce::Graphics& g, bool, bool)
+void LedToggle::paintButton(juce::Graphics& g, bool highlighted, bool)
 {
-    auto b = getLocalBounds().toFloat().reduced(1.0f);
+    // The lamp is inset so the always-on outer ring reads clearly in BOTH
+    // states — the old 10 px dark-on-dark off LED was effectively invisible
+    // (its only cue was a 0.18-alpha ring on a near-identical background).
+    auto b    = getLocalBounds().toFloat().reduced(1.5f);
+    auto lamp = b.reduced(2.5f);
     const bool on = getToggleState();
+
+    // Outer ring — visible whether on or off.
+    g.setColour(on ? megalo::kOrange.withAlpha(0.6f) : megalo::kWhite.withAlpha(0.35f));
+    g.drawEllipse(b, 1.4f);
+
+    // Inner lamp.
     g.setColour(on ? megalo::kOrange : megalo::kDialLo);
-    g.fillEllipse(b);
+    g.fillEllipse(lamp);
     if (on) {
-        g.setColour(megalo::kOrange.withAlpha(0.5f));
-        g.drawEllipse(b.expanded(1.5f), 2.0f);   // glow ring
-    } else {
-        g.setColour(megalo::kWhite.withAlpha(0.18f));
-        g.drawEllipse(b, 1.0f);
+        g.setColour(megalo::kOrange.withAlpha(0.85f));
+        g.drawEllipse(lamp.expanded(1.2f), 1.6f);   // glow
+    }
+
+    // Hover cue.
+    if (highlighted) {
+        g.setColour(megalo::kWhite.withAlpha(0.14f));
+        g.fillEllipse(b);
     }
 }
 
@@ -443,30 +456,18 @@ ThresholdLine::ThresholdLine(APVTS& apvts, const juce::String& paramID)
             });
         attachment->sendInitialUpdate();
     }
-    setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+    // Display-only: the line shows the threshold position + onset flash but is
+    // no longer draggable — the value is set by the ONSET knob. Letting mouse
+    // events pass through also frees the ADSR breakpoints underneath.
+    setInterceptsMouseClicks(false, false);
 }
 
-// Only grab clicks near the line, so the handles underneath stay reachable.
-// When the line sits in the bottom half (low thresholds — the default 0.15
-// puts it right across the ADSR editor), only the left grab-dot area still
-// takes the click; everywhere else the envelope breakpoints win.
-bool ThresholdLine::hitTest(int x, int y)
-{
-    const int lineY = juce::roundToInt((1.0f - norm) * (float) getHeight());
-    if (std::abs(y - lineY) >= 6) return false;
-    return lineY < getHeight() / 2 || x < 24;
-}
+bool ThresholdLine::hitTest(int, int) { return false; }
 
-void ThresholdLine::setFromY(int y)
-{
-    if (!param) return;
-    const float n = juce::jlimit(0.0f, 1.0f, 1.0f - (float) y / (float) juce::jmax(1, getHeight()));
-    attachment->setValueAsPartOfGesture(param->getNormalisableRange().convertFrom0to1(n));
-}
-
-void ThresholdLine::mouseDown(const juce::MouseEvent& e) { if (attachment) { attachment->beginGesture(); setFromY(e.y); } }
-void ThresholdLine::mouseDrag(const juce::MouseEvent& e) { setFromY(e.y); }
-void ThresholdLine::mouseUp  (const juce::MouseEvent&)   { if (attachment) attachment->endGesture(); }
+void ThresholdLine::setFromY(int) {}
+void ThresholdLine::mouseDown(const juce::MouseEvent&) {}
+void ThresholdLine::mouseDrag(const juce::MouseEvent&) {}
+void ThresholdLine::mouseUp  (const juce::MouseEvent&) {}
 
 void ThresholdLine::paint(juce::Graphics& g)
 {
@@ -481,9 +482,6 @@ void ThresholdLine::paint(juce::Graphics& g)
     g.drawDashedLine({ { 0.0f, (float) lineY }, { (float) getWidth(), (float) lineY } },
                      dashes, 2, 1.0f + 1.5f * flash);
 
-    // Left grab dot.
-    g.fillEllipse(6.0f, (float) lineY - 4.0f, 8.0f, 8.0f);
-
     // Value readout, right-aligned.
     g.setColour(megalo::kWhite.withAlpha(0.85f));
     g.setFont(megalo::font(11.0f, true));
@@ -497,13 +495,16 @@ void ThresholdLine::paint(juce::Graphics& g)
 WindowPanel::WindowPanel(APVTS& a)
     : threshold(a, "onset_threshold"), envEditor(a)
 {
-    // Grain Size / Crossfade drive the granular engine (and the granular
-    // fallback of the H+N build), so they are surfaced in both builds —
-    // they used to exist only in the host generic view.
+    // Sample Length / Attack Skip define the capture window (both builds).
     topHandles.add(new TimeHandle(a, "sample_ms",      "SAMPLE", juce::Colour(0xfffff5e6)));
     topHandles.add(new TimeHandle(a, "attack_skip_ms", "SKIP",   juce::Colour(0xfffff5e6)));
+#ifndef MEGALO_HN_SYNTH
+    // Grain Size / Crossfade drive Megalo's granular engine. On MegaloHN the
+    // granular player is only a fallback, so these are fixed in the DSP and not
+    // surfaced here (nor as parameters — see PluginProcessor::createLayout).
     topHandles.add(new TimeHandle(a, "grain_size_ms",  "SIZE",   juce::Colour(0xffffd9a8)));
     topHandles.add(new TimeHandle(a, "grain_xfade_ms", "XFADE",  juce::Colour(0xffffd9a8)));
+#endif
     for (auto* h : topHandles) addAndMakeVisible(h);
 
     addAndMakeVisible(envEditor);
@@ -565,12 +566,17 @@ void WindowPanel::paint(juce::Graphics& g)
     g.setColour(megalo::kWhite.withAlpha(0.85f));
     g.fillRect(juce::Rectangle<float>(0.0f, mid - 0.5f, b.getWidth(), 1.0f));
 
-    // Faint grouping brackets (WINDOW = sample+skip, GRAIN = size+xfade),
-    // inset from the window's top edge.
+    // Faint grouping brackets, inset from the window's top edge.
     g.setColour(megalo::kWhite.withAlpha(0.55f));
     g.setFont(megalo::font(10.0f, true));
+#ifdef MEGALO_HN_SYNTH
+    // MegaloHN: only the capture window handles remain (no GRAIN group).
+    g.drawText("WINDOW", juce::Rectangle<int>(0, 4, getWidth(), 12), juce::Justification::centred, false);
+#else
+    // WINDOW = sample+skip, GRAIN = size+xfade.
     g.drawText("WINDOW", juce::Rectangle<int>(0, 4, getWidth() / 2, 12), juce::Justification::centred, false);
     g.drawText("GRAIN",  juce::Rectangle<int>(getWidth() / 2, 4, getWidth() / 2, 12), juce::Justification::centred, false);
+#endif
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -588,24 +594,26 @@ MegaloEditor::MegaloEditor(MegaloAudioProcessor& p)
         knobs.add(new KnobControl(proc.apvts, id, cap, &lnf));
         addAndMakeVisible(knobs.getLast());
     };
-    addKnob("pitch1_semi",  "PITCH");   // 0  VOICE 1
-    addKnob("pitch1_level", "LEVEL");   // 1
-    addKnob("pitch2_semi",  "PITCH");   // 2  VOICE 2
-    addKnob("pitch2_level", "LEVEL");   // 3
-    addKnob("detune_cents", "CENTS");   // 4  DETUNE
-    addKnob("chorus_rate",  "RATE");    // 5
-    addKnob("detune_blend", "BLEND");   // 6
-    addKnob("filter_cutoff","CUTOFF");  // 7  FILTER
-    addKnob("filter_q",     "Q");       // 8
-    addKnob("base_pitch",   "BASE");    // 9  GLOBAL
-    addKnob("blend",        "BLEND");   // 10
-    addKnob("dry_level",    "DRY");     // 11 (was only reachable via the host)
+    // Order fixed by the layout below (indices referenced in resized()).
+    addKnob("onset_threshold", "THRESH"); // 0  ONSET (row 1, first)
+    addKnob("pitch1_semi",  "PITCH");   // 1  VOICE 1
+    addKnob("pitch1_level", "LEVEL");   // 2
+    addKnob("pitch2_semi",  "PITCH");   // 3  VOICE 2
+    addKnob("pitch2_level", "LEVEL");   // 4
+    addKnob("detune_cents", "CENTS");   // 5  DETUNE
+    addKnob("chorus_rate",  "RATE");    // 6
+    addKnob("detune_blend", "BLEND");   // 7
+    addKnob("filter_cutoff","CUTOFF");  // 8  FILTER (row 2)
+    addKnob("filter_q",     "Q");       // 9
+    addKnob("base_pitch",   "BASE");    // 10 GLOBAL
+    addKnob("blend",        "BLEND");   // 11
+    addKnob("dry_level",    "DRY");     // 12 ATTACK (HN) / GLOBAL (Megalo)
 #ifdef MEGALO_HN_SYNTH
-    addKnob("hn_brightness","BRIGHT");  // 12 TIMBRE (MegaloHN only)
-    addKnob("hn_damping",   "DAMP");    // 13
-    addKnob("hn_even_odd",  "EVEN");    // 14
-    addKnob("hn_noise",     "NOISE");   // 15
-    addKnob("hn_width",     "WIDTH");   // 16
+    addKnob("hn_brightness","BRIGHT");  // 13 TIMBRE (MegaloHN only)
+    addKnob("hn_damping",   "DAMP");    // 14
+    addKnob("hn_even_odd",  "EVEN");    // 15
+    addKnob("hn_noise",     "NOISE");   // 16
+    addKnob("hn_width",     "WIDTH");   // 17
 #endif
 
     leds.add(new LedToggle(proc.apvts, "pitch1_enable"));
@@ -622,11 +630,9 @@ MegaloEditor::MegaloEditor(MegaloAudioProcessor& p)
     addAndMakeVisible(pitchEngine);
 #endif
 
-#ifdef MEGALO_HN_SYNTH
-    setSize(720, 470);   // extra row for TIMBRE
-#else
-    setSize(720, 380);
-#endif
+    // Both builds now use a second controls row (Megalo: FILTER; MegaloHN:
+    // FILTER + TIMBRE), so the panel is 470 px tall for both.
+    setSize(720, 470);
     startTimerHz(30);
 }
 
@@ -722,32 +728,37 @@ void MegaloEditor::paint(juce::Graphics& g)
         g.drawText(labels[i], juce::Rectangle<int>((int) fx - 30, rulerY - 11, 60, 11), just, false);
     }
 
-    // Group backgrounds + titles (GLOBAL widened for the DRY knob).
-    struct GroupSpec { const char* title; int x, w; };
-    const GroupSpec groups[5] = {
-        { "VOICE 1", 26,  104 }, { "VOICE 2", 138, 104 }, { "DETUNE", 250, 134 },
-        { "FILTER", 392, 158 }, { "GLOBAL", 558, 136 }
+    // Group box + orange title (shared by both rows).
+    auto drawGroup = [&](const char* title, int x, int y, int w, int h) {
+        juce::Rectangle<int> r(x, y, w, h);
+        g.setColour(juce::Colours::black.withAlpha(0.18f));
+        g.fillRoundedRectangle(r.toFloat(), 6.0f);
+        g.setColour(megalo::kOrange);
+        g.setFont(megalo::font(11.0f, true));
+        g.drawText(title, r.getX() + 8, r.getY() + 6, r.getWidth() - 26, 12,
+                   juce::Justification::left, false);
     };
-    for (auto& gr : groups) {
-        juce::Rectangle<int> r(gr.x, 245, gr.w, 113);
-        g.setColour(juce::Colours::black.withAlpha(0.18f));
-        g.fillRoundedRectangle(r.toFloat(), 6.0f);
-        g.setColour(megalo::kOrange);
-        g.setFont(megalo::font(11.0f, true));
-        g.drawText(gr.title, r.getX() + 8, r.getY() + 6, r.getWidth() - 26, 12,
-                   juce::Justification::left, false);
-    }
+
+    // ── Row 1 — ONSET leads; FILTER moved to row 2. ──
+    struct GroupSpec { const char* title; int x, w; };
 #ifdef MEGALO_HN_SYNTH
-    // TIMBRE — full-width second row (MegaloHN only).
-    {
-        juce::Rectangle<int> r(26, 368, 668, 88);
-        g.setColour(juce::Colours::black.withAlpha(0.18f));
-        g.fillRoundedRectangle(r.toFloat(), 6.0f);
-        g.setColour(megalo::kOrange);
-        g.setFont(megalo::font(11.0f, true));
-        g.drawText("TIMBRE", r.getX() + 8, r.getY() + 6, r.getWidth() - 26, 12,
-                   juce::Justification::left, false);
-    }
+    // ATTACK holds the DRY knob (the live attack/transient level).
+    const GroupSpec row1[6] = {
+        { "ONSET", 26, 66 }, { "ATTACK", 108, 66 }, { "VOICE 1", 190, 106 },
+        { "VOICE 2", 312, 106 }, { "DETUNE", 434, 138 }, { "GLOBAL", 588, 106 }
+    };
+#else
+    const GroupSpec row1[5] = {
+        { "ONSET", 26, 76 }, { "VOICE 1", 122, 110 }, { "VOICE 2", 252, 110 },
+        { "DETUNE", 382, 150 }, { "GLOBAL", 552, 142 }
+    };
+#endif
+    for (auto& gr : row1) drawGroup(gr.title, gr.x, 245, gr.w, 113);
+
+    // ── Row 2 — FILTER (both), plus TIMBRE on MegaloHN. ──
+    drawGroup("FILTER", 26, 368, 170, 88);
+#ifdef MEGALO_HN_SYNTH
+    drawGroup("TIMBRE", 206, 368, 488, 88);
 #endif
 }
 
@@ -761,48 +772,65 @@ void MegaloEditor::resized()
 
     window.setBounds(26, 60, 668, 170);
 
-    // LEDs sit at the top-right of VOICE 1 / VOICE 2 / DETUNE heads.
-    const int ledGroupX[3] = { 26, 138, 250 };
-    const int ledGroupW[3] = { 104, 104, 134 };
-    for (int i = 0; i < leds.size(); ++i)
-        leds[i]->setBounds(ledGroupX[i] + ledGroupW[i] - 18, 251, 10, 10);
-
     const int knobW = 40, knobH = 52, gap = 6;
-    const int bodyY = 245 + 26;
+    const int row1Y = 245 + 26;   // knob body Y, row 1
+    const int row2Y = 368 + 26;   // knob body Y, row 2
 
-    auto layoutRow = [&](int gx, int gw, std::initializer_list<int> idx, int leftPad) {
+    // Centre a set of knobs inside a group box at (gx..gx+gw), on row y.
+    auto layoutRow = [&](int gx, int gw, int y, std::initializer_list<int> idx) {
         const int n = (int) idx.size();
-        const int rowW = n * knobW + (n - 1) * gap + leftPad;
-        int x = gx + (gw - rowW) / 2 + leftPad;
+        const int rowW = n * knobW + (n - 1) * gap;
+        int x = gx + (gw - rowW) / 2;
         for (int i : idx) {
-            knobs[i]->setBounds(x, bodyY, knobW, knobH);
+            knobs[i]->setBounds(x, y, knobW, knobH);
             x += knobW + gap;
         }
     };
 
-    layoutRow(26,  104, { 0, 1 }, 0);          // VOICE 1
-    layoutRow(138, 104, { 2, 3 }, 0);          // VOICE 2
-    layoutRow(250, 134, { 4, 5, 6 }, 0);       // DETUNE
+    // ── Row 1 — ONSET first; FILTER lives on row 2 now. ──
+#ifdef MEGALO_HN_SYNTH
+    layoutRow(26,  66,  row1Y, { 0 });          // ONSET (THRESH)
+    layoutRow(108, 66,  row1Y, { 12 });         // ATTACK (DRY)
+    layoutRow(190, 106, row1Y, { 1, 2 });       // VOICE 1
+    layoutRow(312, 106, row1Y, { 3, 4 });       // VOICE 2
+    layoutRow(434, 138, row1Y, { 5, 6, 7 });    // DETUNE
+    layoutRow(588, 106, row1Y, { 10, 11 });     // GLOBAL (BASE / BLEND)
+    const int ledGroupX[3] = { 190, 312, 434 };
+    const int ledGroupW[3] = { 106, 106, 138 };
+#else
+    layoutRow(26,  76,  row1Y, { 0 });          // ONSET (THRESH)
+    layoutRow(122, 110, row1Y, { 1, 2 });       // VOICE 1
+    layoutRow(252, 110, row1Y, { 3, 4 });       // VOICE 2
+    layoutRow(382, 150, row1Y, { 5, 6, 7 });    // DETUNE
+    layoutRow(552, 142, row1Y, { 10, 11, 12 }); // GLOBAL (BASE / BLEND / DRY)
+    const int ledGroupX[3] = { 122, 252, 382 };
+    const int ledGroupW[3] = { 110, 110, 150 };
+#endif
 
-    // FILTER: 3-pos switch on the left, then CUTOFF + Q.
+    // Enable LEDs at the top-right of VOICE 1 / VOICE 2 / DETUNE heads. 16 px
+    // (was 10) so they're an obvious, hittable toggle — see the audit note on
+    // the enable LED being easy to miss.
+    const int ledSize = 16;
+    for (int i = 0; i < leds.size(); ++i)
+        leds[i]->setBounds(ledGroupX[i] + ledGroupW[i] - 8 - ledSize, 247, ledSize, ledSize);
+
+    // ── Row 2 — FILTER (both builds), TIMBRE (MegaloHN). ──
+    // FILTER group box is 26..196: 3-pos switch + CUTOFF + Q, centred in it.
     const int swW = 60, swH = 22;
     const int filtContentW = swW + gap + 2 * knobW + gap;
-    int fx = 392 + (158 - filtContentW) / 2;
-    filterType.setBounds(fx, bodyY + (knobH - swH) / 2 - 6, swW, swH);
+    int fx = 26 + (170 - filtContentW) / 2;
+    filterType.setBounds(fx, row2Y + (knobH - swH) / 2 - 6, swW, swH);
     fx += swW + gap;
-    knobs[7]->setBounds(fx, bodyY, knobW, knobH); fx += knobW + gap;
-    knobs[8]->setBounds(fx, bodyY, knobW, knobH);
-
-    layoutRow(558, 136, { 9, 10, 11 }, 0);     // GLOBAL (BASE / BLEND / DRY)
+    knobs[8]->setBounds(fx, row2Y, knobW, knobH); fx += knobW + gap;
+    knobs[9]->setBounds(fx, row2Y, knobW, knobH);
 
 #ifdef MEGALO_HN_SYNTH
-    // TIMBRE — five knobs spread across the full-width second row.
+    // TIMBRE — five knobs centred in the 206..694 box.
     {
-        const int tBodyY = 368 + 26;
         const int n = 5, rowW = n * knobW + (n - 1) * gap;
-        int x = 26 + (668 - rowW) / 2;
-        for (int i = 12; i <= 16; ++i) {
-            knobs[i]->setBounds(x, tBodyY, knobW, knobH);
+        int x = 206 + (488 - rowW) / 2;
+        for (int i = 13; i <= 17; ++i) {
+            knobs[i]->setBounds(x, row2Y, knobW, knobH);
             x += knobW + gap;
         }
     }

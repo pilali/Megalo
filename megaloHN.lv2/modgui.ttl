@@ -23,10 +23,6 @@
         ] , [
             lv2:index 5 ; lv2:symbol "blend"           ; lv2:name "Blend" ;
         ] , [
-            lv2:index 6 ; lv2:symbol "grain_size_ms"   ; lv2:name "Grain Size" ;
-        ] , [
-            lv2:index 7 ; lv2:symbol "grain_xfade_ms"  ; lv2:name "Grain Crossfade" ;
-        ] , [
             lv2:index 8 ; lv2:symbol "base_pitch"      ; lv2:name "Base Pitch" ;
         ] , [
             lv2:index 9 ; lv2:symbol "pitch1_semi"     ; lv2:name "Voice 1 Pitch" ;

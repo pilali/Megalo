@@ -8,3 +8,7 @@ build/
 *.swp
 *~
 build_hn/
+
+# Node tooling for tools/modgui_screenshot.js (playwright + jquery)
+node_modules/
+package-lock.json
