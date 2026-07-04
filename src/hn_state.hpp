@@ -15,6 +15,11 @@ struct HNState {
     int   n_partials = 0;
     float harm_amp  [HN_MAX_PARTIALS] = {};
     float harm_phase[HN_MAX_PARTIALS] = {};
+    // Measured partial frequencies in Hz (0 = not measured → synth falls back
+    // to the ideal k·f0). Real strings are inharmonic (partials stretched
+    // above k·f0); resynthesising at the measured frequencies is what keeps
+    // the pad from sounding organ-like.
+    float harm_freq [HN_MAX_PARTIALS] = {};
     float noise_rms  = 0.0f;  // broadband residual level
     bool  valid      = false; // false → no usable pitched content
 };

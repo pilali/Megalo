@@ -25,6 +25,13 @@ APVTS::ParameterLayout MegaloAudioProcessor::createLayout()
     Range cutoffRange(20.0f, 20000.0f);
     cutoffRange.setSkewForCentre(1000.0f);
 
+    // Envelope times: log-like skew so the musically dense 0–300 ms zone gets
+    // most of the drag travel (linear mapping made a 20 ms attack unreachable:
+    // ~60 ms per pixel on the editor).
+    Range atkRange(0.0f, 5000.0f);  atkRange.setSkewForCentre(250.0f);
+    Range dcyRange(0.0f, 5000.0f);  dcyRange.setSkewForCentre(250.0f);
+    Range relRange(0.0f, 10000.0f); relRange.setSkewForCentre(1000.0f);
+
     p.add(std::make_unique<AF>(pid("onset_threshold"), "Onset Threshold", Range(0.0f, 1.0f), 0.15f));
     p.add(std::make_unique<AF>(pid("sample_ms"), "Sample Length", intRange(50.0f, 500.0f), 150.0f, FA{}.withLabel("ms")));
     p.add(std::make_unique<AF>(pid("attack_skip_ms"), "Attack Skip", Range(0.0f, 500.0f), 50.0f, FA{}.withLabel("ms")));
@@ -43,10 +50,12 @@ APVTS::ParameterLayout MegaloAudioProcessor::createLayout()
                                juce::StringArray { "LP", "HP", "BP" }, 0));
     p.add(std::make_unique<AF>(pid("filter_cutoff"), "Filter Cutoff", cutoffRange, 3000.0f, FA{}.withLabel("Hz")));
     p.add(std::make_unique<AF>(pid("filter_q"), "Filter Q", Range(0.1f, 10.0f), 0.7f));
-    p.add(std::make_unique<AF>(pid("env_attack"), "Attack", Range(0.0f, 5000.0f), 100.0f, FA{}.withLabel("ms")));
-    p.add(std::make_unique<AF>(pid("env_decay"), "Decay", Range(0.0f, 5000.0f), 200.0f, FA{}.withLabel("ms")));
-    p.add(std::make_unique<AF>(pid("env_sustain"), "Sustain", Range(0.0f, 1.0f), 1.0f));
-    p.add(std::make_unique<AF>(pid("env_release"), "Release", Range(0.0f, 10000.0f), 1000.0f, FA{}.withLabel("ms")));
+    p.add(std::make_unique<AF>(pid("env_attack"), "Attack", atkRange, 100.0f, FA{}.withLabel("ms")));
+    p.add(std::make_unique<AF>(pid("env_decay"), "Decay", dcyRange, 200.0f, FA{}.withLabel("ms")));
+    // Sustain default 0.8 (was 1.0, which silently disabled Decay — a key
+    // source of the "D does nothing" confusion).
+    p.add(std::make_unique<AF>(pid("env_sustain"), "Sustain", Range(0.0f, 1.0f), 0.8f));
+    p.add(std::make_unique<AF>(pid("env_release"), "Release", relRange, 1000.0f, FA{}.withLabel("ms")));
     p.add(std::make_unique<AB>(pid("detune_enable"), "Detune Enable", false));
     p.add(std::make_unique<AB>(pid("pitch1_enable"), "Voice 1 Enable", true));
     p.add(std::make_unique<AB>(pid("pitch2_enable"), "Voice 2 Enable", false));
@@ -193,6 +202,13 @@ void MegaloAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
             juce::FloatVectorOperations::copy(buffer.getWritePointer(ch), mono, n);
     }
     triggerPulse.store(megalo_dsp_trigger(dsp), std::memory_order_relaxed);
+
+    // Mirror the capture status for the editor's readout.
+    float f0[kMaxPadNotes];
+    const int nNotes = megalo_dsp_pad_notes(dsp, f0, kMaxPadNotes);
+    for (int i = 0; i < nNotes && i < kMaxPadNotes; ++i)
+        padF0[i].store(f0[i], std::memory_order_relaxed);
+    padNoteCount.store(nNotes, std::memory_order_relaxed);
 }
 
 juce::AudioProcessorEditor* MegaloAudioProcessor::createEditor()

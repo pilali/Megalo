@@ -47,9 +47,12 @@ set(DSP_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 # Shared per-plugin setup: sources, includes, the optional phase-vocoder
 # defines, the common JUCE config defines, and the link libraries.
 #   _target   CMake target name (created by juce_add_plugin beforehand)
-function(megalo_configure_juce _target)
+#   _dsp_src  the plugin's own DSP core (megalo_dsp.cpp or megaloHN_dsp.cpp).
+#             Megalo and MegaloHN are fully separate cores; each target compiles
+#             only its own so MegaloHN's tuning can't affect Megalo's sound.
+function(megalo_configure_juce _target _dsp_src)
     target_sources(${_target} PRIVATE
-        PluginProcessor.cpp PluginEditor.cpp ${DSP_DIR}/megalo_dsp.cpp)
+        PluginProcessor.cpp PluginEditor.cpp ${DSP_DIR}/${_dsp_src})
     target_include_directories(${_target} PRIVATE ${DSP_DIR})
 
     if(MEGALO_PHASE_VOCODER)
@@ -86,7 +89,7 @@ if(MEGALO_BUILD_STD)
         VST3_CATEGORIES Fx
         AU_MAIN_TYPE kAudioUnitType_Effect
         PRODUCT_NAME "Megalo")
-    megalo_configure_juce(Megalo)
+    megalo_configure_juce(Megalo megalo_dsp.cpp)
     message(STATUS "Megalo (granular) JUCE plugin enabled")
 endif()
 
@@ -105,7 +108,7 @@ if(MEGALO_BUILD_HN)
         VST3_CATEGORIES Fx
         AU_MAIN_TYPE kAudioUnitType_Effect
         PRODUCT_NAME "MegaloHN")
-    megalo_configure_juce(MegaloHN)
+    megalo_configure_juce(MegaloHN megaloHN_dsp.cpp)
     target_compile_definitions(MegaloHN PRIVATE
         MEGALO_HN_SYNTH MEGALO_HN_QUALITY=${MEGALO_HN_QUALITY})
     message(STATUS "MegaloHN (H+N additive, tier ${MEGALO_HN_QUALITY}) JUCE plugin enabled")

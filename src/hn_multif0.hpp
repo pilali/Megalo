@@ -63,36 +63,99 @@ static inline float peak_mag(const float* mag, int nbins, float bin) noexcept
     const float a = mag[c - 1], b = mag[c], cc = mag[c + 1];
     const float denom = a - 2.0f * b + cc;
     if (std::abs(denom) < 1e-12f) return b;
-    const float p = 0.5f * (a - cc) / denom;    // sub-bin offset [-0.5,0.5]
+    // Clamp the vertex offset: on the jagged skirt of a partially-subtracted
+    // lobe the unbounded parabola extrapolated to several times the true
+    // magnitude (measured 3.4x on a pure sine), inflating phantom notes.
+    const float p = std::min(0.5f, std::max(-0.5f, 0.5f * (a - cc) / denom));
     return b - 0.25f * (a - cc) * p;            // parabola vertex value
 }
 
-// Harmonic-comb salience of a candidate fundamental f0.
+// Refined frequency (Hz) of a partial near fractional bin `bin`: snap to the
+// local maximum within ±1 bin, then parabolic-interpolate the vertex
+// POSITION (peak_mag interpolates the vertex VALUE). Recovers the true,
+// slightly stretched frequency of an inharmonic string partial.
+static inline float peak_freq(const float* mag, int nbins, float bin,
+                              float bin_per_hz) noexcept
+{
+    const int c0 = static_cast<int>(std::lround(bin));
+    if (c0 < 4 || c0 >= nbins - 4) return bin / bin_per_hz;
+    int c = c0;
+    // ±3-bin snap: high partials of a stiff string drift more than one bin
+    // above k·f0 (peak_mag keeps ±1 for amplitudes). The caller's ±3 % clamp
+    // bounds the damage if this grabs a foreign peak in a dense chord.
+    for (int d = -3; d <= 3; ++d)
+        if (mag[c0 + d] > mag[c]) c = c0 + d;
+    const float a = mag[c - 1], b = mag[c], cc = mag[c + 1];
+    const float denom = a - 2.0f * b + cc;
+    if (std::abs(denom) < 1e-12f) return static_cast<float>(c) / bin_per_hz;
+    const float p = std::min(0.5f, std::max(-0.5f, 0.5f * (a - cc) / denom));
+    return (static_cast<float>(c) + p) / bin_per_hz;
+}
+
+// ── Detection-robustness tuning (grouped so they can be set by ear) ────────
+// Whitening (④) curbs the "loudest harmonic wins" bias; the two-way mismatch
+// (③) replaces the old odd/even guard and kills octave-UP errors; the
+// sub-harmonic descent (①) is a safety net applied at pick time; the attack
+// down-weight (⑤) lives in the windowing step of hn_multif0_analyze().
+static constexpr float WHITEN_AMOUNT      = 0.5f;   // ④ 0 = off … 1 = full whitening
+static constexpr float WHITEN_SMOOTH_HZ   = 220.0f; // ④ envelope smoothing width (Hz)
+static constexpr float SUBOCT_PENALTY     = 0.8f;   // ③ two-way mismatch strength [0,1]
+static constexpr float SUBHARM_KEEP       = 0.85f;  // ① descend an octave when the
+                                                    //   sub-multiple keeps ≥ this × salience
+static constexpr float ATTACK_SUPPRESS_MS = 30.0f;  // ⑤ attack-region down-weight span
+static constexpr float ATTACK_FLOOR       = 0.3f;   // ⑤ residual weight inside that span
+
+// Whitened, linear-interpolated magnitude at a fractional bin. The per-bin gain
+// (precomputed once from the pristine spectrum) flattens the broadband tilt so
+// the comb score reflects partial PRESENCE, not absolute loudness — without
+// touching the raw mag[] used for amplitude/noise estimation.
+static inline float mag_at_w(const float* mag, const float* wg,
+                             int nbins, float bin) noexcept
+{
+    if (bin < 0.0f || bin >= static_cast<float>(nbins - 1)) return 0.0f;
+    const int   i0   = static_cast<int>(bin);
+    const float frac = bin - static_cast<float>(i0);
+    const float m = mag[i0] + frac * (mag[i0 + 1] - mag[i0]);
+    const float g = wg [i0] + frac * (wg [i0 + 1] - wg [i0]);
+    return m * g;
+}
+
+// Harmonic-comb salience of a candidate fundamental f0 (whitened), with a
+// two-way mismatch penalty (③) that replaces the former odd/even guard.
 //
-// A 1/sqrt(k) weighting already disfavours the octave-up trap. The extra
-// sub-octave GUARD handles the opposite error seen on real audio: a phantom
-// f0 = F/2 whose comb (F/2, F, 3F/2, 2F …) lands its EVEN harmonics on a real
-// note F's partials and scores high. A genuine note has energy on its
-// fundamental and odd harmonics (g, 3g, 5g); a phantom sub-octave has ~none
-// there (the real source sits at 2g, 4g …). We scale salience by how much of
-// the comb's energy actually sits on the odd harmonics, so a phantom — whose
-// own fundamental is essentially absent — is pushed below the real note.
-static inline float salience(const float* mag, int nbins, float f0,
-                             float sr, int fft_n) noexcept
+// The comb sum credits energy on f0, 2·f0, 3·f0 … with a 1/sqrt(k) weighting.
+// The mismatch term measures energy on the HALF-teeth — the odd multiples of
+// f0/2 (f0/2, 3·f0/2, 5·f0/2 …) that a genuine fundamental does NOT excite but
+// an octave-UP phantom does (those are the real lower note's partials the
+// phantom skips). The candidate is scaled down in proportion to how much of its
+// neighbourhood energy falls on those skipped teeth, so the real, lower
+// fundamental wins even when its own fundamental bin is weak — the typical
+// guitar case the old guard mis-handled (it penalised exactly those notes).
+//
+// A genuinely low note has nothing below it → half ≈ 0 → no penalty; only a
+// candidate that is itself a harmonic of something lower gets pushed down.
+static inline float salience(const float* mag, const float* wg, int nbins,
+                             float f0, float sr, int fft_n) noexcept
 {
     const float bin_per_hz = static_cast<float>(fft_n) / sr;
     const int   kmax       = std::min(hnq::MAX_PARTIALS,
                                       static_cast<int>(0.46f * sr / f0));
-    float s = 0.0f, odd = 0.0f, even = 0.0f;
-    for (int k = 1; k <= kmax; ++k) {
-        const float m = mag_at(mag, nbins, f0 * static_cast<float>(k) * bin_per_hz);
-        s += m / std::sqrt(static_cast<float>(k));
-        if (k & 1) odd += m; else even += m;
+    float s = 0.0f;
+    for (int k = 1; k <= kmax; ++k)
+        s += mag_at_w(mag, wg, nbins, f0 * static_cast<float>(k) * bin_per_hz)
+             / std::sqrt(static_cast<float>(k));
+
+    // Energy on the skipped half-teeth (odd harmonics of f0/2).
+    float half = 0.0f;
+    const float half_bin = 0.5f * f0 * bin_per_hz;
+    for (int t = 1; t <= 2 * kmax; t += 2) {
+        const float b = half_bin * static_cast<float>(t);
+        if (b >= static_cast<float>(nbins - 1)) break;
+        half += mag_at_w(mag, wg, nbins, b)
+                / std::sqrt(0.5f * static_cast<float>(t));
     }
-    // guard ≈ 1 for a real harmonic note, → small when the odd harmonics
-    // (fundamental included) are missing, i.e. a sub-octave phantom.
-    const float guard = (odd + even > 1e-12f) ? odd / (odd + even) : 0.0f;
-    return s * (0.25f + 0.75f * std::min(1.0f, 2.0f * guard));
+    const float mism = (s + half > 1e-12f) ? half / (s + half) : 0.0f;
+    return s * (1.0f - SUBOCT_PENALTY * mism);
 }
 
 } // namespace hnmf
@@ -120,17 +183,39 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
     static thread_local float mag[hnq::FFT_SIZE / 2];
     static thread_local float mag_orig[hnq::FFT_SIZE / 2];   // kept for NNLS
 
+    // ⑤ Attack-suppression: an ASYMMETRIC window. A normal Hann tapers both ends
+    // (clean leakage) but still weights the pluck transient sitting tens of ms
+    // into the loop — its broadband energy tilts the spectrum bright and feeds
+    // the octave-up error. We keep the Hann (all samples → full frequency
+    // resolution, no added latency: the audio is already captured) and multiply
+    // an extra raised-cosine ramp over the first ATTACK_SUPPRESS_MS so the attack
+    // is down-weighted toward ATTACK_FLOOR without being discarded. Only applied
+    // when the loop is comfortably longer than the ramp; otherwise plain Hann.
+    const int  atk_n   = std::min(L / 3, static_cast<int>(
+                             hnmf::ATTACK_SUPPRESS_MS * 0.001f * sr));
+    const bool use_atk = (atk_n > 0 && L > 4 * atk_n);
     float win_sum = 0.0f, sig_ss = 0.0f;
     for (int i = 0; i < L; ++i) {
         // Hann window over the L analysed samples.
-        const float w = 0.5f * (1.0f - std::cos(2.0f * float(M_PI) *
+        float w = 0.5f * (1.0f - std::cos(2.0f * float(M_PI) *
                           static_cast<float>(i) / static_cast<float>(L - 1)));
+        if (use_atk && i < atk_n) {
+            const float r = 0.5f * (1.0f - std::cos(float(M_PI) *
+                              static_cast<float>(i) / static_cast<float>(atk_n)));
+            w *= hnmf::ATTACK_FLOOR + (1.0f - hnmf::ATTACK_FLOOR) * r;   // floor→1
+        }
         re[i] = loop[i] * w;
         im[i] = 0.0f;
         win_sum += w;
-        sig_ss += loop[i] * loop[i];        // raw signal power (for noise RMS)
     }
-    sig_ss = (L > 0) ? sig_ss / static_cast<float>(L) : 0.0f;
+    // Signal power for the noise residual: measured over the SECOND HALF of
+    // the analysed span only, so the pluck transient (which the window above
+    // merely down-weights for scoring) doesn't inflate the sustained noise
+    // level — the old full-span estimate turned every pick attack into a
+    // permanent hiss on the pad.
+    for (int i = L / 2; i < L; ++i)
+        sig_ss += loop[i] * loop[i];
+    sig_ss = (L > 1) ? sig_ss / static_cast<float>(L - L / 2) : 0.0f;
     for (int i = L; i < N; ++i) { re[i] = 0.0f; im[i] = 0.0f; }
 
     hnfft::fft(re, im, N);
@@ -145,6 +230,31 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
     // Single-sided sinusoid amplitude ≈ 2·peak_mag / Σwindow.
     const float amp_scale = (win_sum > 0.0f) ? (2.0f / win_sum) : 0.0f;
 
+    // ── ④ Whitening gain (SCORING path only) ──────────────────────────────
+    // A smoothed spectral envelope → per-bin gain 1/env^WHITEN_AMOUNT that
+    // flattens the broadband tilt for the salience/mismatch scoring, so a
+    // candidate is judged on partial PRESENCE rather than on whichever harmonic
+    // happens to be loudest (the bright-attack bias). mag[] itself — used for
+    // amplitude extraction, the noise residual and NNLS — is left untouched, so
+    // the resynthesis stays calibrated. The score uses mag[bin]·wgain[bin], and
+    // since the greedy pass subtracts from mag[] the whitened score tracks the
+    // subtraction automatically. (Scale-invariant: only relative scores matter.)
+    static thread_local float  wgain[hnq::FFT_SIZE / 2];
+    static thread_local double wpref[hnq::FFT_SIZE / 2 + 1];
+    {
+        wpref[0] = 0.0;
+        for (int i = 0; i < NB; ++i) wpref[i + 1] = wpref[i] + mag_orig[i];
+        const int half_w = std::max(4, static_cast<int>(
+            hnmf::WHITEN_SMOOTH_HZ * static_cast<float>(N) / sr * 0.5f));
+        for (int i = 0; i < NB; ++i) {
+            const int lo = std::max(0, i - half_w);
+            const int hi = std::min(NB - 1, i + half_w);
+            const float env = static_cast<float>(
+                (wpref[hi + 1] - wpref[lo]) / static_cast<double>(hi - lo + 1));
+            wgain[i] = 1.0f / std::pow(env + 1e-9f, hnmf::WHITEN_AMOUNT);
+        }
+    }
+
     // ── 2. Candidate F0 grid (log-spaced, ~20 cents) ──────────────────────
     static constexpr float CENTS_STEP = 20.0f;
     const float ratio_step = std::pow(2.0f, CENTS_STEP / 1200.0f);
@@ -158,25 +268,60 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
         float f = hnq::F0_MIN;
         for (int c = 0; c < n_cand; ++c, f *= ratio_step) {
             cand_f0 [c] = f;
-            cand_sal[c] = hnmf::salience(mag, NB, f, sr, N);
+            cand_sal[c] = hnmf::salience(mag, wgain, NB, f, sr, N);
         }
     }
 
     // ── 3. Greedy multi-F0 extraction with harmonic subtraction ───────────
     static constexpr float REL_THRESH = 0.18f;  // stop below this × first note
-    float first_sal = 0.0f;
+    // Minimum spacing between accepted notes. Two fundamentals 60–80 cents
+    // apart cannot both be real on a fretted instrument; such picks are the
+    // residual skirt of an already-subtracted partial (the captured loop is
+    // shorter than the FFT, so the zero-padded Hann mainlobe spans several
+    // bins around every partial).
+    static constexpr float MIN_NOTE_CENTS = 80.0f;
+    // Mainlobe half-width in bins of the zero-padded Hann window: ±2 bins at
+    // L == N (the historical width — kept exactly so full-length analyses
+    // behave as before), wider (+1 safety) when the loop is shorter than the
+    // FFT and the lobe spreads across 2·N/L bins.
+    const int lobe_hw = std::min(8, (L >= N)
+        ? 2
+        : (int)std::ceil(2.0f * (float)N / (float)std::max(1, L)) + 1);
 
-    for (int note = 0; note < hnq::MAX_NOTES; ++note) {
+    float first_sal = 0.0f;
+    int   attempts  = 0;
+
+    while (out.n_notes < hnq::MAX_NOTES && attempts++ < 3 * hnq::MAX_NOTES) {
         // Pick the most salient remaining candidate.
         int   best_c = -1;
         float best_s = 0.0f;
         for (int c = 0; c < n_cand; ++c)
             if (cand_sal[c] > best_s) { best_s = cand_sal[c]; best_c = c; }
         if (best_c < 0) break;
-        if (note == 0) first_sal = best_s;
+        if (out.n_notes == 0) first_sal = best_s;
         else if (best_s < REL_THRESH * first_sal) break;
 
         float f0 = cand_f0[best_c];
+
+        // ① Octave-down verification (safety net over the ③ ranking). The
+        // whitened two-way-mismatch salience already favours the true low
+        // fundamental, but a pick can still slip an octave high on a very
+        // weak-fundamental note; here we test f0/2 and f0/3 and descend to the
+        // lowest sub-multiple that keeps ≥ SUBHARM_KEEP × the current salience.
+        // The mismatch term inside salience() blocks descending onto a genuine
+        // sub-octave phantom (its own teeth are absent → low salience), so this
+        // only fires when the lower fundamental really carries energy.
+        {
+            float chosen   = f0;
+            float chosen_s = hnmf::salience(mag, wgain, NB, f0, sr, N);
+            for (int sub = 2; sub <= 3; ++sub) {
+                const float fs = f0 / static_cast<float>(sub);
+                if (fs < hnq::F0_MIN) break;
+                const float ss = hnmf::salience(mag, wgain, NB, fs, sr, N);
+                if (ss > hnmf::SUBHARM_KEEP * chosen_s) { chosen = fs; chosen_s = ss; }
+            }
+            f0 = chosen;
+        }
 
         // Sub-bin refinement: parabolic interpolation on the loudest harmonic
         // peak (harmonic m resolves f0 m× finer than the fundamental bin).
@@ -200,6 +345,22 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
             }
         }
 
+        // Reject picks closer than MIN_NOTE_CENTS to an accepted note (lobe
+        // skirt phantoms) and blank their whole candidate neighbourhood so
+        // the next pass moves on to genuinely different pitches.
+        {
+            bool dup = false;
+            for (int i = 0; i < out.n_notes && !dup; ++i)
+                if (std::abs(1200.0f * std::log2(f0 / out.notes[i].f0)) < MIN_NOTE_CENTS)
+                    dup = true;
+            if (dup) {
+                for (int c = 0; c < n_cand; ++c)
+                    if (std::abs(1200.0f * std::log2(cand_f0[c] / f0)) < MIN_NOTE_CENTS)
+                        cand_sal[c] = 0.0f;
+                continue;
+            }
+        }
+
         // Record the note's harmonic amplitudes/phases, and subtract its comb.
         HNState& st = out.notes[out.n_notes];
         st = HNState{};
@@ -215,15 +376,27 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
             const float amp = a * amp_scale;
             st.harm_amp [k - 1] = amp;
             st.harm_phase[k - 1] = std::atan2(im[ib], re[ib]);
+            // Measured partial frequency (inharmonicity). Clamped to ±3 % of
+            // the ideal k·f0 so a neighbouring note's partial is never grabbed.
+            {
+                const float ideal = f0 * static_cast<float>(k);
+                float fmeas = hnmf::peak_freq(mag, NB, fb, bin_per_hz);
+                if (std::abs(fmeas - ideal) > 0.03f * ideal) fmeas = ideal;
+                st.harm_freq[k - 1] = fmeas;
+            }
             st.n_partials = k;
             harm_ss += 0.5f * amp * amp;
 
-            // Soft-subtract a small triangular bump (±2 bins) so this comb is
-            // not redetected and shared harmonics are partly freed for others.
-            for (int d = -2; d <= 2; ++d) {
+            // Soft-subtract a triangular bump covering the WHOLE zero-padded
+            // mainlobe (±lobe_hw bins) so this comb is not redetected. The
+            // old fixed ±2 bins left most of the lobe skirt behind whenever
+            // the loop was shorter than the FFT — the skirt then came back
+            // as phantom "notes" a few bins away, with inflated amplitudes.
+            for (int d = -lobe_hw; d <= lobe_hw; ++d) {
                 const int j = ib + d;
                 if (j < 0 || j >= NB) continue;
-                const float wd = 1.0f - 0.25f * static_cast<float>(std::abs(d));
+                const float wd = 1.0f - static_cast<float>(std::abs(d))
+                                        / static_cast<float>(lobe_hw + 1);
                 mag[j] = std::max(0.0f, mag[j] - a * wd);
             }
         }
@@ -235,7 +408,7 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
         // Refresh salience of candidates near this f0 and its octaves so the
         // next pick reflects the subtraction.
         for (int c = 0; c < n_cand; ++c)
-            cand_sal[c] = hnmf::salience(mag, NB, cand_f0[c], sr, N);
+            cand_sal[c] = hnmf::salience(mag, wgain, NB, cand_f0[c], sr, N);
     }
 
     // Second stage: joint amplitude attribution to recover octave notes whose

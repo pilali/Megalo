@@ -29,7 +29,11 @@ public:
             _b2 = _b0;
             break;
         case BP:
-            _b0 =  sw / (2.0f * norm);
+            // Constant 0 dB PEAK gain (RBJ "BPF, constant peak"): the Q knob
+            // changes the bandwidth, not the level. The previous constant-
+            // skirt form had a peak gain equal to Q — +20 dB at Q = 10,
+            // driving the output clipper.
+            _b0 =  alpha / norm;
             _b1 =  0.0f;
             _b2 = -_b0;
             break;

@@ -43,10 +43,26 @@ public:
         _sr          = sr;
         _pitch_ratio = 1.0f;
         std::memcpy(_eff_amp, st.harm_amp, sizeof _eff_amp);   // neutral timbre
-        std::memset(_phase, 0, sizeof _phase);
-        for (int b = 0; b < N_NOISE; ++b)
-            _noise_st[b] = static_cast<uint32_t>((b + 1) * 2654435761u);
-        std::memset(_noise_lp, 0, sizeof _noise_lp);
+        // Start each partial at its MEASURED phase: the resynthesized wave
+        // then resembles the source instead of the all-zero-phase crest stack
+        // (which peaked hard at the attack and clipped earlier). Notes whose
+        // analyzer left no phases (NNLS-refined) get a golden-ratio spread —
+        // anything but coherent zeros.
+        bool has_phase = false;
+        for (int k = 0; k < st.n_partials && !has_phase; ++k)
+            if (st.harm_phase[k] != 0.0f) has_phase = true;
+        for (int k = 0; k < HN_MAX_PARTIALS; ++k) {
+            float frac = (k + 1) * 0.6180339887f;
+            frac -= std::floor(frac);
+            _phase[k] = has_phase ? st.harm_phase[k]
+                                  : (frac * 2.0f - 1.0f) * float(M_PI);
+        }
+        for (int b = 0; b < N_NOISE; ++b) {
+            _noise_st  [b] = static_cast<uint32_t>((b + 1) * 2654435761u);
+            _noise_st_r[b] = static_cast<uint32_t>((b + 7) * 0x9E3779B9u);
+        }
+        std::memset(_noise_lp,   0, sizeof _noise_lp);
+        std::memset(_noise_lp_r, 0, sizeof _noise_lp_r);
         // Fixed per-partial phase offsets (golden-ratio sequence → well spread)
         // used to decorrelate the right channel for stereo width.
         for (int k = 0; k < HN_MAX_PARTIALS; ++k) {
@@ -99,10 +115,16 @@ private:
 
         for (int k = 0; k < _st.n_partials; ++k) {
             const float amp = _eff_amp[k];
+            // Measured partial frequency when available (keeps the string's
+            // natural inharmonic stretch); ideal k·f0 otherwise (legacy
+            // analyzers leave harm_freq at 0).
+            const float fk = ((_st.harm_freq[k] > 0.0f)
+                              ? _st.harm_freq[k]
+                              : _st.f0 * static_cast<float>(k + 1)) * _pitch_ratio;
+            if (fk >= _sr * 0.46f) break;
             if (amp < 1e-7f) continue;
-            if (f0 * static_cast<float>(k + 1) >= _sr * 0.46f) break;
 
-            _phase[k] += float(2.0 * M_PI) * f0 * static_cast<float>(k + 1) / _sr;
+            _phase[k] += float(2.0 * M_PI) * fk / _sr;
             if (_phase[k] >  float(M_PI)) _phase[k] -= float(2.0f * M_PI);
             if (_phase[k] < -float(M_PI)) _phase[k] += float(2.0f * M_PI);
 
@@ -112,6 +134,8 @@ private:
 
         // ── Shaped noise (6 first-order LP bands → band-pass by subtraction)
         if (_st.noise_rms * _noise_scale > 1e-7f) {
+            const float gain = _st.noise_rms * _noise_scale * 4.0f;
+            float noise_l = 0.0f;
             for (int b = 0; b < N_NOISE; ++b) {
                 _noise_st[b] = _noise_st[b] * 1664525u + 1013904223u;
                 const float n = static_cast<float>(
@@ -120,12 +144,32 @@ private:
                     f0 * static_cast<float>(1 << (b + 1)) / _sr, 0.45f);
                 _noise_lp[b] += fc * (n - _noise_lp[b]);
             }
-            float noise_out = 0.0f;
             for (int b = 0; b < N_NOISE - 1; ++b)
-                noise_out += _noise_lp[b] - _noise_lp[b + 1];
-            noise_out *= _st.noise_rms * _noise_scale * 4.0f;
-            l += noise_out;
-            if (stereo) r += noise_out;   // noise stays centred; width is harmonic
+                noise_l += _noise_lp[b] - _noise_lp[b + 1];
+            noise_l *= gain;
+            l += noise_l;
+            if (stereo) {
+                if (width > 0.0f) {
+                    // Independent right-channel noise, blended in by width —
+                    // the air/breath now widens with the pad instead of
+                    // collapsing to the centre.
+                    float noise_r = 0.0f;
+                    for (int b = 0; b < N_NOISE; ++b) {
+                        _noise_st_r[b] = _noise_st_r[b] * 1664525u + 1013904223u;
+                        const float n = static_cast<float>(
+                            static_cast<int32_t>(_noise_st_r[b])) * (1.0f / 2147483648.0f);
+                        const float fc = std::min(
+                            f0 * static_cast<float>(1 << (b + 1)) / _sr, 0.45f);
+                        _noise_lp_r[b] += fc * (n - _noise_lp_r[b]);
+                    }
+                    for (int b = 0; b < N_NOISE - 1; ++b)
+                        noise_r += _noise_lp_r[b] - _noise_lp_r[b + 1];
+                    noise_r *= gain;
+                    r += noise_l * (1.0f - width) + noise_r * width;
+                } else {
+                    r += noise_l;
+                }
+            }
         }
     }
 
@@ -136,6 +180,8 @@ private:
     float    _eff_amp[HN_MAX_PARTIALS] = {};
     float    _phase  [HN_MAX_PARTIALS] = {};
     float    _woff   [HN_MAX_PARTIALS] = {};
-    uint32_t _noise_st[N_NOISE]        = {};
-    float    _noise_lp[N_NOISE]        = {};
+    uint32_t _noise_st  [N_NOISE]      = {};
+    uint32_t _noise_st_r[N_NOISE]      = {};   // independent right channel
+    float    _noise_lp  [N_NOISE]      = {};
+    float    _noise_lp_r[N_NOISE]      = {};
 };
