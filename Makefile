@@ -36,14 +36,15 @@ else ifeq ($(TARGET),moddwarf-new)
     EXTRA_DEFS = -DMEGALO_PV_N=1024
 
 else ifeq ($(TARGET),modduox-new)
-    # MOD Duo X — quad Cortex-A53 (ARMv8-A). No Dwarf restrictions: full
-    # features like the Pi 5 / desktop builds (phase vocoder + pi5 polyphony
-    # tier; see the quality-tier block below).
+    # MOD Duo X — quad Cortex-A53 (ARMv8-A). Phase vocoder enabled, but with
+    # the lighter 1024-point FFT (like the Dwarf): the A53 doesn't have the
+    # A76/desktop headroom for the 2048 analysis. Polyphony stays on the pi5
+    # tier (see the quality-tier block below).
     CXX      ?= aarch64-modaudio-linux-gnu-g++
     CXXFLAGS ?= -std=c++17 -O3 -ffast-math \
                 -mcpu=cortex-a53 \
                 -fvisibility=hidden -Wall -Wextra -Wno-unused-parameter
-    EXTRA_DEFS = -DMEGALO_PHASE_VOCODER -DMEGALO_PV_N=2048
+    EXTRA_DEFS = -DMEGALO_PHASE_VOCODER -DMEGALO_PV_N=1024
 
 else  # native
     CXX      ?= g++

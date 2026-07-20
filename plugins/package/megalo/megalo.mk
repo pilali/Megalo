@@ -14,10 +14,14 @@ MEGALO_BUNDLES = megalo.lv2
 
 # Enable PhaseVocoder pitch shifter on RPi5 (Cortex-A76 / ARMv8.2-A).
 # On MOD Dwarf (Cortex-A35) the GrainPlayer fallback is used instead.
+# The defines are passed as a command-line EXTRA_DEFS override — appending
+# them to CXXFLAGS instead would clash with the moddwarf-new target's own
+# EXTRA_DEFS (-DMEGALO_PV_N=1024), which comes later on the compile line and
+# silently knocked the RPi5 vocoder down to a 1024-point FFT.
 ifeq ($(BR2_cortex_a76),y)
-MEGALO_PV_DEFS = -DMEGALO_PHASE_VOCODER -DMEGALO_PV_N=2048
+MEGALO_PV_OVERRIDE = EXTRA_DEFS="-DMEGALO_PHASE_VOCODER -DMEGALO_PV_N=2048"
 else
-MEGALO_PV_DEFS =
+MEGALO_PV_OVERRIDE =
 endif
 
 # `megalo` target builds only the stock bundle (the Makefile's default `all`
@@ -27,7 +31,8 @@ define MEGALO_BUILD_CMDS
 		TARGET=moddwarf-new \
 		CXX="$(TARGET_CXX)" \
 		STRIP="$(TARGET_STRIP)" \
-		CXXFLAGS="$(TARGET_CXXFLAGS) -std=c++17 -O3 -ffast-math -fvisibility=hidden $(MEGALO_PV_DEFS)"
+		CXXFLAGS="$(TARGET_CXXFLAGS) -std=c++17 -O3 -ffast-math -fvisibility=hidden" \
+		$(MEGALO_PV_OVERRIDE)
 endef
 
 define MEGALO_INSTALL_TARGET_CMDS
