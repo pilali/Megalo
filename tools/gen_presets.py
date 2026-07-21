@@ -16,9 +16,24 @@ The same name/value pair therefore drives the LV2 and the native formats, so a
 preset sounds identical in MOD, a DAW, and the standalone app.
 """
 
+import math
 import os
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# MegaloHN squares the Voice 1/2 level control (perceptual taper in
+# megaloHN_dsp.cpp: gain = level²) so a level sweep behaves like a fader instead
+# of an on/off. Presets are authored as the intended LINEAR gain, so the HN
+# outputs must pre-warp those two controls by √ to keep the same loudness. The
+# granular Megalo keeps the linear control, so the warp is applied ONLY to the
+# HN preset (.ttl in megaloHN.lv2 and the MEGALO_HN_SYNTH branch of the C++
+# table) — the shared authored values below stay the granular-correct ones.
+HN_LEVEL_SYMS = ("pitch1_level", "pitch2_level")
+
+
+def hn_level(v):
+    v = float(v)
+    return round(math.sqrt(v), 4) if v > 0.0 else 0.0
 
 MEGALO_URI = "https://github.com/pilali/megalo"
 HN_URI     = "https://github.com/pilali/megalo/hn"
@@ -278,7 +293,18 @@ def write_cpp_header(path):
         L.append(f"// {p['name']}")
         L.append(f"static const PresetParam kPreset{i}[] = {{")
         for sym in BASE_ORDER:
-            L.append(f'    {{ "{sym}", {cpp_value(p["base"][sym])} }},')
+            if sym in HN_LEVEL_SYMS:
+                # Same symbol, two values: the HN build reads the √-warped gain
+                # (its level control is squared), the granular build the linear
+                # one. One entry either way, so the array size is unchanged.
+                lin = p["base"][sym]
+                L.append("#ifdef MEGALO_HN_SYNTH")
+                L.append(f'    {{ "{sym}", {cpp_value(hn_level(lin))} }},')
+                L.append("#else")
+                L.append(f'    {{ "{sym}", {cpp_value(lin)} }},')
+                L.append("#endif")
+            else:
+                L.append(f'    {{ "{sym}", {cpp_value(p["base"][sym])} }},')
         L.append(f'    {{ "pitch_mode", {cpp_value(p["pitch_mode"])} }},')
         L.append("#ifdef MEGALO_HN_SYNTH")
         for sym in HN_ORDER:
@@ -319,6 +345,8 @@ def main():
         write_preset_ttl(os.path.join(megalo_dir, filename(p["name"])),
                          MEGALO_URI, p["name"], BASE_ORDER, p["base"])
         hn_vals = dict(p["base"]); hn_vals.update(p["hn"])
+        for sym in HN_LEVEL_SYMS:                 # √-warp for the HN taper
+            hn_vals[sym] = hn_level(hn_vals[sym])
         write_preset_ttl(os.path.join(hn_dir, filename(p["name"])),
                          HN_URI, p["name"], BASE_ORDER + HN_ORDER, hn_vals)
 

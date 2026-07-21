@@ -31,10 +31,18 @@ static const PresetParam kPreset0[] = {
     { "grain_xfade_ms", 50.0f },
     { "onset_threshold", 0.12f },
     { "pitch1_enable", 0.0f },
+#ifdef MEGALO_HN_SYNTH
     { "pitch1_level", 0.0f },
+#else
+    { "pitch1_level", 0.0f },
+#endif
     { "pitch1_semi", -12.0f },
     { "pitch2_enable", 0.0f },
+#ifdef MEGALO_HN_SYNTH
     { "pitch2_level", 0.0f },
+#else
+    { "pitch2_level", 0.0f },
+#endif
     { "pitch2_semi", 12.0f },
     { "sample_ms", 160.0f },
     { "pitch_mode", 0.0f },
@@ -68,10 +76,18 @@ static const PresetParam kPreset1[] = {
     { "grain_xfade_ms", 60.0f },
     { "onset_threshold", 0.13f },
     { "pitch1_enable", 1.0f },
+#ifdef MEGALO_HN_SYNTH
+    { "pitch1_level", 0.7071f },
+#else
     { "pitch1_level", 0.5f },
+#endif
     { "pitch1_semi", -12.0f },
     { "pitch2_enable", 0.0f },
+#ifdef MEGALO_HN_SYNTH
     { "pitch2_level", 0.0f },
+#else
+    { "pitch2_level", 0.0f },
+#endif
     { "pitch2_semi", 0.0f },
     { "sample_ms", 200.0f },
     { "pitch_mode", 0.0f },
@@ -105,10 +121,18 @@ static const PresetParam kPreset2[] = {
     { "grain_xfade_ms", 50.0f },
     { "onset_threshold", 0.12f },
     { "pitch1_enable", 1.0f },
+#ifdef MEGALO_HN_SYNTH
+    { "pitch1_level", 0.6708f },
+#else
     { "pitch1_level", 0.45f },
+#endif
     { "pitch1_semi", 12.0f },
     { "pitch2_enable", 1.0f },
+#ifdef MEGALO_HN_SYNTH
+    { "pitch2_level", 0.5477f },
+#else
     { "pitch2_level", 0.3f },
+#endif
     { "pitch2_semi", 19.0f },
     { "sample_ms", 180.0f },
     { "pitch_mode", 1.0f },
@@ -142,10 +166,18 @@ static const PresetParam kPreset3[] = {
     { "grain_xfade_ms", 60.0f },
     { "onset_threshold", 0.1f },
     { "pitch1_enable", 1.0f },
+#ifdef MEGALO_HN_SYNTH
+    { "pitch1_level", 0.6325f },
+#else
     { "pitch1_level", 0.4f },
+#endif
     { "pitch1_semi", -12.0f },
     { "pitch2_enable", 1.0f },
+#ifdef MEGALO_HN_SYNTH
+    { "pitch2_level", 0.6325f },
+#else
     { "pitch2_level", 0.4f },
+#endif
     { "pitch2_semi", 12.0f },
     { "sample_ms", 220.0f },
     { "pitch_mode", 0.0f },
@@ -179,10 +211,18 @@ static const PresetParam kPreset4[] = {
     { "grain_xfade_ms", 80.0f },
     { "onset_threshold", 0.1f },
     { "pitch1_enable", 1.0f },
+#ifdef MEGALO_HN_SYNTH
+    { "pitch1_level", 0.5916f },
+#else
     { "pitch1_level", 0.35f },
+#endif
     { "pitch1_semi", 12.0f },
     { "pitch2_enable", 1.0f },
+#ifdef MEGALO_HN_SYNTH
+    { "pitch2_level", 0.5f },
+#else
     { "pitch2_level", 0.25f },
+#endif
     { "pitch2_semi", 7.0f },
     { "sample_ms", 300.0f },
     { "pitch_mode", 1.0f },
@@ -216,10 +256,18 @@ static const PresetParam kPreset5[] = {
     { "grain_xfade_ms", 70.0f },
     { "onset_threshold", 0.15f },
     { "pitch1_enable", 1.0f },
+#ifdef MEGALO_HN_SYNTH
+    { "pitch1_level", 0.7071f },
+#else
     { "pitch1_level", 0.5f },
+#endif
     { "pitch1_semi", -12.0f },
     { "pitch2_enable", 1.0f },
+#ifdef MEGALO_HN_SYNTH
+    { "pitch2_level", 0.5477f },
+#else
     { "pitch2_level", 0.3f },
+#endif
     { "pitch2_semi", -24.0f },
     { "sample_ms", 360.0f },
     { "pitch_mode", 0.0f },
@@ -253,10 +301,18 @@ static const PresetParam kPreset6[] = {
     { "grain_xfade_ms", 20.0f },
     { "onset_threshold", 0.18f },
     { "pitch1_enable", 1.0f },
+#ifdef MEGALO_HN_SYNTH
+    { "pitch1_level", 0.6325f },
+#else
     { "pitch1_level", 0.4f },
+#endif
     { "pitch1_semi", 12.0f },
     { "pitch2_enable", 1.0f },
+#ifdef MEGALO_HN_SYNTH
+    { "pitch2_level", 0.5f },
+#else
     { "pitch2_level", 0.25f },
+#endif
     { "pitch2_semi", 24.0f },
     { "sample_ms", 120.0f },
     { "pitch_mode", 1.0f },
@@ -290,10 +346,18 @@ static const PresetParam kPreset7[] = {
     { "grain_xfade_ms", 50.0f },
     { "onset_threshold", 0.2f },
     { "pitch1_enable", 1.0f },
+#ifdef MEGALO_HN_SYNTH
+    { "pitch1_level", 0.7746f },
+#else
     { "pitch1_level", 0.6f },
+#endif
     { "pitch1_semi", -12.0f },
     { "pitch2_enable", 0.0f },
+#ifdef MEGALO_HN_SYNTH
     { "pitch2_level", 0.0f },
+#else
+    { "pitch2_level", 0.0f },
+#endif
     { "pitch2_semi", -24.0f },
     { "sample_ms", 150.0f },
     { "pitch_mode", 0.0f },
@@ -327,10 +391,18 @@ static const PresetParam kPreset8[] = {
     { "grain_xfade_ms", 40.0f },
     { "onset_threshold", 0.22f },
     { "pitch1_enable", 1.0f },
+#ifdef MEGALO_HN_SYNTH
+    { "pitch1_level", 0.7071f },
+#else
     { "pitch1_level", 0.5f },
+#endif
     { "pitch1_semi", -12.0f },
     { "pitch2_enable", 1.0f },
+#ifdef MEGALO_HN_SYNTH
+    { "pitch2_level", 0.5477f },
+#else
     { "pitch2_level", 0.3f },
+#endif
     { "pitch2_semi", 12.0f },
     { "sample_ms", 100.0f },
     { "pitch_mode", 0.0f },
@@ -364,10 +436,18 @@ static const PresetParam kPreset9[] = {
     { "grain_xfade_ms", 70.0f },
     { "onset_threshold", 0.12f },
     { "pitch1_enable", 1.0f },
+#ifdef MEGALO_HN_SYNTH
+    { "pitch1_level", 0.5477f },
+#else
     { "pitch1_level", 0.3f },
+#endif
     { "pitch1_semi", -12.0f },
     { "pitch2_enable", 1.0f },
+#ifdef MEGALO_HN_SYNTH
+    { "pitch2_level", 0.5477f },
+#else
     { "pitch2_level", 0.3f },
+#endif
     { "pitch2_semi", 12.0f },
     { "sample_ms", 240.0f },
     { "pitch_mode", 0.0f },
