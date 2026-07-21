@@ -69,7 +69,7 @@
 		pset:value 1.0
 	] , [
 		lv2:symbol "pitch1_level" ;
-		pset:value 0.5
+		pset:value 0.7071
 	] , [
 		lv2:symbol "pitch1_semi" ;
 		pset:value -12.0
@@ -78,7 +78,7 @@
 		pset:value 1.0
 	] , [
 		lv2:symbol "pitch2_level" ;
-		pset:value 0.3
+		pset:value 0.5477
 	] , [
 		lv2:symbol "pitch2_semi" ;
 		pset:value -24.0

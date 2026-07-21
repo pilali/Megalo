@@ -199,6 +199,15 @@ static inline double semi_to_ratio(float semi) noexcept {
 // bounded at ±1. The previous x/(1+|x|) waveshaper compressed the WHOLE
 // signal (−3.5 dB and audible odd harmonics already at −6 dBFS), so the dry
 // path never passed clean even at blend = 0.
+// Perceptual level taper for the voice gains. The raw ports are linear
+// amplitude [0,1]; a linear gain crams the whole audible range into the bottom
+// of the knob (0.5 is already only −6 dB), so a level sweep felt like an
+// on/off. Squaring the control maps it to a fader-like curve — 0.5 → −12 dB,
+// 0.25 → −24 dB — spreading the loudness change evenly across the travel.
+static inline float perceptual_level(float x) noexcept {
+    return x * x;
+}
+
 static inline float soft_clip(float x) noexcept {
     constexpr float KNEE = 0.7f;             // ≈ −3 dBFS
     const float a = std::abs(x);
@@ -350,9 +359,9 @@ static void process_impl(MegaloDsp* p, const MegaloParams* p_,
     const float base_pitch    = std::clamp(p_->base_pitch,         -12.0f, 12.0f);
     const float base_speed    = static_cast<float>(semi_to_ratio(base_pitch));
     const float p1_semi       =            p_->pitch1_semi;
-    const float p1_lvl        = std::clamp(p_->pitch1_level,        0.0f,   1.0f);
+    const float p1_lvl        = perceptual_level(std::clamp(p_->pitch1_level, 0.0f, 1.0f));
     const float p2_semi       =            p_->pitch2_semi;
-    const float p2_lvl        = std::clamp(p_->pitch2_level,        0.0f,   1.0f);
+    const float p2_lvl        = perceptual_level(std::clamp(p_->pitch2_level, 0.0f, 1.0f));
     const float detune_ct     = std::clamp(p_->detune_cents,        0.0f,  50.0f);
     const float chorus_rate   = std::clamp(p_->chorus_rate,         0.1f,   8.0f);
     const float detune_blend  = std::clamp(p_->detune_blend,        0.0f,   1.0f);

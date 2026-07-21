@@ -60,9 +60,15 @@ public:
         for (int b = 0; b < N_NOISE; ++b) {
             _noise_st  [b] = static_cast<uint32_t>((b + 1) * 2654435761u);
             _noise_st_r[b] = static_cast<uint32_t>((b + 7) * 0x9E3779B9u);
+            _noise_band[b] = st.noise_band[b];   // measured residual colour
         }
         std::memset(_noise_lp,   0, sizeof _noise_lp);
         std::memset(_noise_lp_r, 0, sizeof _noise_lp_r);
+        // Breath modulator: a heavily smoothed random walk (~1 Hz) that gently
+        // moves the residual level so the noise "breathes" instead of sitting
+        // as a constant hiss. Seeded distinctly per instance.
+        _breath_st = static_cast<uint32_t>(0xB5297A4Du ^ (uintptr_t)this);
+        _breath_lp = 0.0f;
         // Fixed per-partial phase offsets (golden-ratio sequence → well spread)
         // used to decorrelate the right channel for stereo width.
         for (int k = 0; k < HN_MAX_PARTIALS; ++k) {
@@ -106,6 +112,8 @@ public:
 
 private:
     static constexpr int N_NOISE = 6;
+    static_assert(N_NOISE == HN_NOISE_BANDS,
+                  "noise filter-bank must match HNState::noise_band size");
 
     void render(float& l, float& r, float width, bool stereo) noexcept {
         l = r = 0.0f;
@@ -133,8 +141,20 @@ private:
         }
 
         // ── Shaped noise (6 first-order LP bands → band-pass by subtraction)
+        // Each band-pass region is weighted by the MEASURED residual envelope
+        // (_noise_band) so the noise follows the instrument's own air colour
+        // rather than a flat f0-harmonic comb, and the whole residual is scaled
+        // by a slow breath modulator so it drifts instead of hissing flat.
         if (_st.noise_rms * _noise_scale > 1e-7f) {
-            const float gain = _st.noise_rms * _noise_scale * 4.0f;
+            // Breath: smoothed random walk, ~1 Hz, depth ±BREATH_DEPTH.
+            constexpr float BREATH_DEPTH = 0.3f;
+            _breath_st = _breath_st * 1664525u + 1013904223u;
+            const float bn = static_cast<float>(
+                static_cast<int32_t>(_breath_st)) * (1.0f / 2147483648.0f);
+            const float breath_fc = std::min(6.2831853f * 1.0f / _sr, 0.5f);
+            _breath_lp += breath_fc * (bn - _breath_lp);
+            const float breath = 1.0f + BREATH_DEPTH * _breath_lp;
+            const float gain = _st.noise_rms * _noise_scale * 4.0f * breath;
             float noise_l = 0.0f;
             for (int b = 0; b < N_NOISE; ++b) {
                 _noise_st[b] = _noise_st[b] * 1664525u + 1013904223u;
@@ -145,7 +165,7 @@ private:
                 _noise_lp[b] += fc * (n - _noise_lp[b]);
             }
             for (int b = 0; b < N_NOISE - 1; ++b)
-                noise_l += _noise_lp[b] - _noise_lp[b + 1];
+                noise_l += (_noise_lp[b] - _noise_lp[b + 1]) * _noise_band[b];
             noise_l *= gain;
             l += noise_l;
             if (stereo) {
@@ -163,7 +183,7 @@ private:
                         _noise_lp_r[b] += fc * (n - _noise_lp_r[b]);
                     }
                     for (int b = 0; b < N_NOISE - 1; ++b)
-                        noise_r += _noise_lp_r[b] - _noise_lp_r[b + 1];
+                        noise_r += (_noise_lp_r[b] - _noise_lp_r[b + 1]) * _noise_band[b];
                     noise_r *= gain;
                     r += noise_l * (1.0f - width) + noise_r * width;
                 } else {
@@ -184,4 +204,7 @@ private:
     uint32_t _noise_st_r[N_NOISE]      = {};   // independent right channel
     float    _noise_lp  [N_NOISE]      = {};
     float    _noise_lp_r[N_NOISE]      = {};
+    float    _noise_band[N_NOISE]      = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+    uint32_t _breath_st                = 0xB5297A4Du;   // slow breath LFO RNG
+    float    _breath_lp                = 0.0f;
 };

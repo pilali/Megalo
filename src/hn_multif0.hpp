@@ -446,6 +446,39 @@ static MultiHNState hn_multif0_analyze(const float* loop, int loop_len,
     out.noise_rms = noise_rms;
     for (int i = 0; i < out.n_notes; ++i) out.notes[i].noise_rms = noise_rms;
 
+    // ── 5. Residual spectral SHAPE → per-band envelope ────────────────────
+    // The leftover mag[] (harmonics soft-subtracted) is the noise spectrum.
+    // Measure its RMS in the octave bands the synth reproduces — band b spans
+    // [f0·2^(b+1), f0·2^(b+2)] relative to the noise-emitting note (notes[0]) —
+    // and normalise to mean 1, so the synth colours the noise with the real
+    // residual envelope while the overall level stays set by noise_rms.
+    float bands[HN_NOISE_BANDS] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+    if (out.n_notes > 0 && out.notes[0].f0 > 0.0f) {
+        const float bf0 = out.notes[0].f0;
+        float sum = 0.0f; int nz = 0;
+        for (int b = 0; b < HN_NOISE_BANDS; ++b) {
+            const float lo_hz = bf0 * static_cast<float>(1 << (b + 1));
+            const float hi_hz = bf0 * static_cast<float>(1 << (b + 2));
+            int lo = static_cast<int>(lo_hz * bin_per_hz);
+            int hi = static_cast<int>(hi_hz * bin_per_hz);
+            lo = std::max(0, std::min(lo, NB - 1));
+            hi = std::max(lo + 1, std::min(hi, NB));
+            float ss = 0.0f;
+            for (int j = lo; j < hi; ++j) ss += mag[j] * mag[j];
+            bands[b] = std::sqrt(ss / static_cast<float>(hi - lo));
+            if (bands[b] > 0.0f) { sum += bands[b]; ++nz; }
+        }
+        const float mean = (nz > 0) ? sum / static_cast<float>(nz) : 0.0f;
+        if (mean > 1e-12f)
+            for (int b = 0; b < HN_NOISE_BANDS; ++b)
+                bands[b] = std::clamp(bands[b] / mean, 0.0f, 4.0f);
+        else
+            for (int b = 0; b < HN_NOISE_BANDS; ++b) bands[b] = 1.0f;
+    }
+    for (int i = 0; i < out.n_notes; ++i)
+        for (int b = 0; b < HN_NOISE_BANDS; ++b)
+            out.notes[i].noise_band[b] = bands[b];
+
     out.valid = (out.n_notes > 0);
     return out;
 }
